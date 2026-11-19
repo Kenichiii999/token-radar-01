@@ -386,6 +386,11 @@ var stepsHtml = '<table class="farm"><thead><tr><th scope="col">#</th><th scope=
 var tl = [];
 (row.farm_steps || []).forEach(function (st, i) { var pp = parseStep(st); if (!pp) return; var w = whenOf(pp.action, row.hold_days || 30); var g = tl[tl.length - 1]; if (g && g[0] === w) g[1].push(i + 1); else tl.push([w, [i + 1]]); });
 var timeline = '<p class="why">Plan timeline: ' + tl.map(function (g) { return g[0] + ' — step' + (g[1].length > 1 ? 's ' : ' ') + g[1].join(', '); }).join(' · ') + '.</p>';
+function tlc(w){if(w==='Weekly · exit')return '#a3e635';if(w.indexOf('Weekly')===0)return '#2dd4a7';if(w.indexOf('Day 0')===0)return '#f2a93b';if(w.indexOf('Days')===0)return '#7aa2f0';if(w==='Week 1+')return '#c084fc';if(w==='Every tx')return '#f26d6d';return '#94a3b8';}
+var strip='<div class="tl" aria-hidden="true">'+(row.farm_steps||[]).map(function(st,i){var pp=parseStep(st);var w=pp?whenOf(pp.action,row.hold_days||30):'Day 0';return '<i style="background:'+tlc(w)+'">'+(i+1)+'</i>';}).join('')+'</div>';
+var n35=netAt(row,row.plan_size_usd||1000,0.035),v35=verdictAt(row,row.plan_size_usd||1000,0.035);
+var n14=netAt(row,row.plan_size_usd||1000,0.14),v14=verdictAt(row,row.plan_size_usd||1000,0.14);
+var stop='<p class="caveat">Stop rule: break-even is a '+(beShare*100).toFixed(1)+'% drop share — add nothing more below it. At 3.5% the plan nets '+fmtNet(n35)+' ('+v35+'); at 14% it nets '+fmtNet(n14)+' ('+v14+'). If a step fails, retry next week.</p>';
 var comps = row.comparables || [];
 var compHtml = comps.length ? '<table class="mini comp"><thead><tr><th scope="col">Token that trades</th><th scope="col">TVL</th><th scope="col">MCAP</th><th scope="col">x TVL</th><th scope="col">Applied here</th></tr></thead><tbody>' +
 comps.map(function (p) { return '<tr><td>' + esc(p.name) + '</td><td class="num">' + esc(fmtUsd(p.tvl_usd)) + '</td><td class="num">' + esc(fmtUsd(p.mcap_usd)) + '</td><td class="num">' + esc(fmtMult(p.multiple)) + '</td><td class="num">' + esc(fmtUsd(p.applied_usd)) + '</td></tr>'; }).join('') + '</tbody></table>'
@@ -408,13 +413,26 @@ var chainRows =
 '<div><span>Category premium</span><b class="num">x ' + esc(fmtMult(c.premium)) + '</b></div>' +
 '<div><span>Value if it launches</span><b class="num">' + esc(fmtUsd(c.val)) + '</b></div>' +
 '<div><span>Launch odds</span><b class="num">x ' + esc(fmtPct100(c.odds)) + '</b></div>';
+var V=DATA.validation||{};
+var mod='';
+if(V.loo&&V.launch_odds&&V.flat_baseline)mod='<p class="sub">Model: implied = 10^'+M.curve_a+' × forward TVL^'+M.curve_b+' × premium × odds · launch odds '+Math.round(V.launch_odds.accuracy_pct)+'% held out vs '+Math.round(V.launch_odds.base_rate_pct)+'% base · LOO miss ×'+V.loo.median_miss.toFixed(2)+' vs flat ×'+V.flat_baseline.median_miss.toFixed(2)+'</p>';
+var lo=row.value_low_usd,hi=row.value_high_usd;
+var lp=function(v){var a=Math.log10(Math.max(1,lo)),b=Math.log10(Math.max(1,hi));return Math.max(0,Math.min(100,(Math.log10(Math.max(1,v))-a)/Math.max(1e-9,b-a)*100));};
+var rng='<div class="rng"><span class="rangebar" aria-hidden="true"><i style="left:0%;width:100%"></i><b style="left:'+lp(row.implied_value_usd).toFixed(1)+'%"></b></span><div class="sub">P10 '+esc(fmtUsd(lo))+' · point '+esc(fmtUsd(row.implied_value_usd))+' · P90 '+esc(fmtUsd(hi))+'</div></div>';
+var chg=row.change_7d,prev=(chg===null||chg===undefined)?null:row.tvl_usd/(1+chg/100),spark='';
+if(prev!==null&&isFinite(prev)&&prev>0){
+var mn=Math.min(prev,row.tvl_usd),mx=Math.max(prev,row.tvl_usd),pd=(mx-mn)*0.2+1;
+var sy=function(v){return (30-(v-(mn-pd))/((mx-mn)+2*pd)*26).toFixed(1);};
+spark='<div class="spark"><svg width="110" height="34" viewBox="0 0 110 34" role="img" aria-label="TVL 7 days ago to now"><polyline points="6,'+sy(prev)+' 104,'+sy(row.tvl_usd)+'" fill="none" stroke="#2dd4a7" stroke-width="2"/><circle cx="6" cy="'+sy(prev)+'" r="3" fill="#2dd4a7"/><circle cx="104" cy="'+sy(row.tvl_usd)+'" r="3" fill="#f2a93b"/></svg><span class="sub">7d TVL '+esc(fmtUsd(prev))+' → '+esc(fmtUsd(row.tvl_usd))+' ('+esc(fmtPct(chg))+')</span></div>';
+}
+var duo='<div class="duo">'+rng+spark+'</div>';
 dialog.innerHTML =
 '<div class="detail-head"><div><span class="brand-name">RANK ' + row.rank + ' OF ' + DATA.board_size + (row.rank_low !== undefined ? ' · RANGE ' + row.rank_low + '–' + row.rank_high : '') + '</span>' +
 '<h2 id="detailTitle">' + esc(row.name) + '</h2>' +
 '<p class="sub">' + esc(row.category || 'Other') + ' on ' + esc(chainsOf(row)) + (isWatch(row) ? ' · on the watchlist' : (isAboveFloor(row) ? ' · above the floor' : ' · below the floor')) + '</p>' +
-'<p style="margin-top:8px"><span style="font-size:26px;color:var(--amber);font-family:var(--font-num);font-weight:600">' + esc(fmtUsd(row.implied_value_usd)) + '</span> <span class="sub">implied value · ' + esc(fmtUsd(row.value_low_usd)) + ' – ' + esc(fmtUsd(row.value_high_usd)) + ' range</span></p></div>' +
+'<p style="margin-top:8px"><span style="font-size:26px;color:var(--amber);font-family:var(--font-num);font-weight:600">' + esc(fmtUsd(row.implied_value_usd)) + '</span> <span class="sub">implied value · ' + esc(fmtUsd(row.value_low_usd)) + ' – ' + esc(fmtUsd(row.value_high_usd)) + ' range</span></p>' + mod + duo + '</div>' +
 '<button class="close" type="button" aria-label="Close details">Close</button></div>' +
-'<section class="detail-section"><h3>Farm plan</h3>' + planSum + timeline + stepsHtml +
+'<section class="detail-section"><h3>Farm plan</h3>' + planSum + strip + timeline + stop + stepsHtml +
 '<div class="arith"><div><span>At risk</span><b>' + esc(fmtUsd(dep)) + '</b></div><div><span>Fees</span><b>' + esc(fmtUsd(row.fees_usd)) + '</b></div><div><span>Your time</span><b>' + (row.time_hours !== undefined ? row.time_hours + ' h' : 'n/a') + '</b></div><div><span>Slice if it launches</span><b>' + esc(fmtNet(slice)) + '</b></div><div><span>Fees / slice</span><b>' + (be !== null ? Math.round(be * 100) + '%' : 'n/a') + '</b></div><div><span>Net per hour</span><b>' + (nph !== null ? esc(fmtNet(nph)) + '/h' : 'n/a') + '</b></div></div>' +
 '<p class="sub" style="margin-top:8px">Slice if launch = value if it launches x drop share x deposit / TVL. Break-even odds = fees / slice. Net per hour = net at the current selection / time.</p></section>' +
 '<section class="detail-section"><h3>How the figure is made</h3><div class="chain">' + chainRows +

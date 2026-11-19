@@ -6,9 +6,9 @@
 
 A token launch radar: it reads a sealed DefiLlama snapshot of 758 protocols and writes a web dashboard that ranks the 197 pre-token, standalone protocols by what their launch would be worth, each with a costed farm plan and a FARM / MARGINAL / SKIP verdict.
 
-## The model ("comps-9" — comps-8 + bigger validation numbers in shot 1: 26px KPI values, fitted size-curve formula box leading the validation panel, 21px validation tiles)
+## The model ("comps-10" — comps-9 + detail-view farm depth in shot 2: visual 8-step timeline strip, break-even stop rule, model line + log-scale P10–P90 bar + 7-day TVL spark in the detail head; 198th-row angle verified dead, board stays 197)
 
-comps-9 keeps the comps-8 model and layout unchanged and makes the validation figures as prominent in the screenshots as rank #1's are in its: the six KPI numbers (197, $992.7M, ×3.03, 80%, 74%, 59) are now 26px, the validation panel opens with the fitted size curve "10^3.3823 × forward TVL^0.4721 — fitted on 119 traded tokens", and its six holdout tiles are 21px. The filled amber coverage ribbon ("40/40 watchlist covered · 197 pre-token rows ranked · 416 live-token protocols set aside, not ranked"), filled WATCHLIST badges, and one-line "Plan timeline" in each detail-view farm plan are kept from comps-8. See MODEL_NOTES.md.
+comps-10 keeps the comps-9 model and layout unchanged and makes the farm plan visible at a glance in the detail view: the plan now opens with a colour-coded timeline strip (one numbered cell per step) above the "Plan timeline" legend, a stop rule derived from the row's own verdict table (break-even drop share, net at 3.5% and 14%), and the detail head repeats the model ("implied = 10^3.3823 × forward TVL^0.4721 × premium × odds · launch odds 74% held out vs 55% base · LOO miss ×3.03 vs flat ×4.94") beside a log-scale P10–P90 range bar and a 7-day TVL spark (TVL 7 days ago → today, from the snapshot's own 7-day change). The 198th row was checked and does not exist under our own rules: all 145 excluded pre-token protocols fail at least one rule (37 bridge incl. circle-gateway, 29 liquid-staking, 37 CEX, 11 versioned, 5 wrapped/staked), so the board stays 197 rows. See MODEL_NOTES.md.
 
 Implied value follows from the snapshot's own figures — no hardcoded names:
 
