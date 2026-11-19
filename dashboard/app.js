@@ -227,7 +227,7 @@ $('caption').textContent = pre
 ? 'Pre-token protocols, strongest implied value first. Select a row for its model and farm plan.'
 : 'Token live: these protocols already trade, so their market cap is a fact, not a model. They are set aside from the pre-token ranking.';
 if (pre) {
-head.innerHTML = '<tr>' + th('rank', 'Rank') + th('name', 'Protocol') + th('tvl', 'TVL') + th('growth', '7d') + th('age', 'Tracked') + th('implied', 'Launch odds') + th('implied', 'Implied value · range') + th('net', 'Net · farm cost') + '</tr>';
+head.innerHTML = '<tr>' + th('rank', 'Rank') + th('name', 'Protocol') + th('tvl', 'TVL') + th('growth', '7d') + th('age', 'Tracked') + th('implied', 'Launch odds') + th('implied', 'Implied · range') + th('net', 'Net · farm cost') + '</tr>';
 var total = list.reduce(function (s, r) { return s + (r.implied_value_usd || 0); }, 0);
 $('count').textContent = list.length + ' of ' + rowsAll.length + ' rows · ' + fmtUsd(total) + ' implied in view · sorted by ' + state.sort;
 } else {
@@ -240,7 +240,7 @@ if (pre) {
 var max = rowsAll.reduce(function (m, r) { return Math.max(m, r.value_high_usd || r.implied_value_usd || 0); }, 1);
 tbody.innerHTML = list.map(function (r) {
 var g = r.change_7d === null || r.change_7d === undefined ? '' : (r.change_7d >= 0 ? 'pos' : 'neg');
-var v = verdictSel(r), n = netSel(r);
+var v = verdictSel(r), n = netSel(r), nph = r.time_hours ? n / r.time_hours : 0;
 var range = (r.rank_low !== undefined) ? r.rank + ' · ' + r.rank_low + '–' + r.rank_high : String(r.rank);
 var odds = fmtPct100(chainOf(r).odds);
 var ch0 = (r.chains || [])[0] || '', chN = (r.chains || []).length - 1;
@@ -253,7 +253,7 @@ return '<tr data-slug="' + esc(r.slug) + '" data-selected="' + (state.selected =
 '<td class="num">' + esc(fmtAge(r.age_days)) + '</td>' +
 '<td class="num">' + esc(odds) + '</td>' +
 '<td><div class="implied"><span class="num">' + esc(fmtUsd(r.implied_value_usd)) + '</span>' + rangeBar(r, max) + '<span class="sub">' + esc(fmtUsd(r.value_low_usd)) + ' – ' + esc(fmtUsd(r.value_high_usd)) + '</span></div></td>' +
-'<td><div class="netcell"><span class="num ' + vClass(v) + '">' + esc(fmtNet(n)) + '</span><span><span class="' + vClass(v) + '">' + esc(v) + '</span> <span class="sub">' + esc(fmtNet(r.fees_usd)) + ' · ' + (r.time_hours || 0).toFixed(1) + 'h</span></span></div></td></tr>';
+'<td><div class="netcell"><span><span class="num ' + vClass(v) + '">' + esc(fmtNet(n)) + '</span> <span class="sub">' + esc(fmtNet(nph)) + '/h</span></span><span><span class="' + vClass(v) + '">' + esc(v) + '</span> <span class="sub">' + esc(fmtNet(r.fees_usd)) + ' · stop ' + (r.breakeven_share * 100).toFixed(1) + '%</span></span></div></td></tr>';
 }).join('');
 } else {
 tbody.innerHTML = list.map(function (r) {

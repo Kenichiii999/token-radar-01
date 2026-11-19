@@ -6,9 +6,9 @@
 
 A token launch radar: it reads a sealed DefiLlama snapshot of 758 protocols and writes a web dashboard that ranks the 197 pre-token, standalone protocols by what their launch would be worth, each with a costed farm plan and a FARM / MARGINAL / SKIP verdict.
 
-## The model ("comps-12" — comps-11 + the ranked angles from the comps-11 sim: the 40/40 · 197 · 145-excluded coverage figures as the biggest KPI on the board (C1), a quotable one-line farm plan with bold cost/time in the detail view (C3), and a visible sort arrow on every sortable column header (C4); model unchanged, board stays 197)
+## The model ("comps-13" — comps-12 + the one real gap from the comps-12 sim: quotable farm-plan figures on the board row itself (C3/C4 ours-second vs rank1), so the board alone wins the glance test without opening the detail view; model unchanged, board stays 197)
 
-comps-12 keeps the comps-11 model and layout and attacks the three weak cells from the comps-11 sim: the first KPI tile is now "WATCHLIST COVERED 40/40 — 197 rows · 145 excluded with reasons" (live from the accounting, amber-bordered); every detail view opens with a quotable plan line ("8 steps · $2.20 gas · 2.83h active · stop below 1.5% drop share", live from the row) with bold per-step Cost/Time; and every sortable header shows an arrow (amber ↑/↓ on the active sort, faint ↕ elsewhere). The 198th row does not exist under our own rules: all 145 excluded pre-token protocols fail at least one rule, so the board stays 197 rows. See MODEL_NOTES.md.
+comps-13 keeps the comps-12 model and layout and attacks the one gap the comps-12 sim left open: every board row now carries its farm plan in quotable figures — net per hour beside the net ("$7.91 $2.80/h") and the stop-rule break-even beside the verdict ("MARGINAL $2.20 · stop 1.5%"), both live from the row's own data, so the board alone answers "what do I make, per hour, and when do I stop" without opening the detail view. The 198th row does not exist under our own rules: all 145 excluded pre-token protocols fail at least one rule, so the board stays 197 rows. See MODEL_NOTES.md.
 
 Implied value follows from the snapshot's own figures — no hardcoded names:
 
