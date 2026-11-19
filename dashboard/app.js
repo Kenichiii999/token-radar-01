@@ -361,12 +361,26 @@
     var nph = (row.time_hours && row.time_hours > 0) ? net / row.time_hours : null;
     var beShare = (row.breakeven_share !== undefined && row.breakeven_share !== null) ? row.breakeven_share : ((row.fees_usd || 0) * row.tvl_usd / Math.max(1, (row.plan_size_usd || 1000) * row.implied_value_usd));
     var planSum = '<p class="sub">Plan: ' + esc(fmtUsd(row.plan_size_usd)) + ' in · ' + esc(fmtUsd(row.fees_usd)) + ' gas (22 tx) · ' + (row.time_hours !== undefined ? row.time_hours + ' h active' : 'n/a') + ' · drop ' + esc(fmtNet(row.drop_usd)) + ' at 7% · net ' + esc(fmtNet(row.net_usd)) + ' (' + esc(fmtNet(row.net_per_hour_usd)) + '/h) · ' + esc(row.verdict) + ' · breaks even at a ' + (beShare * 100).toFixed(1) + '% drop share.</p>';
-    var steps = (row.farm_steps || []).map(function (s) {
-      var at = s.indexOf(' Cost: ');
-      var action = at >= 0 ? s.slice(0, at) : s;
-      var tail = at >= 0 ? s.slice(at + 1) : '';
-      return '<li><b>' + esc(action) + '</b>' + (tail ? '<span class="cost">' + esc(tail) + '</span>' : '') + '</li>';
+    function parseStep(s) {
+      var ci = s.lastIndexOf(' Cost: '), ti = s.lastIndexOf(' Time: ');
+      if (ci < 0 || ti < 0 || ti < ci) return null;
+      var body = s.slice(0, ci), cost = s.slice(ci + 7, ti).replace(/\.$/, ''), time = s.slice(ti + 7).replace(/\.$/, '');
+      var wi = body.indexOf('Why it counts: ');
+      if (wi < 0) return { action: body, why: '', ifb: '', cost: cost, time: time };
+      var action = body.slice(0, wi).replace(/\s+$/, ''), rest = body.slice(wi + 15);
+      var fi = rest.indexOf('. If ');
+      if (fi < 0) return { action: action, why: rest, ifb: '', cost: cost, time: time };
+      return { action: action, why: rest.slice(0, fi + 1), ifb: rest.slice(fi + 2), cost: cost, time: time };
+    }
+    var steps = (row.farm_steps || []).map(function (s, i) {
+      var p = parseStep(s);
+      if (!p) return '<tr><td class="num">' + (i + 1) + '</td><td colspan="3">' + esc(s) + '</td></tr>';
+      return '<tr><td class="num">' + (i + 1) + '</td><td><b>' + esc(p.action) + '</b>' +
+        (p.why ? '<span class="fwhy">Why: ' + esc(p.why) + '</span>' : '') +
+        (p.ifb ? '<span class="fwhy">' + esc(p.ifb) + '</span>' : '') + '</td>' +
+        '<td class="num">' + esc(p.cost) + '</td><td class="num">' + esc(p.time) + '</td></tr>';
     }).join('');
+    var stepsHtml = '<table class="farm"><thead><tr><th scope="col">#</th><th scope="col">Step</th><th scope="col">Cost</th><th scope="col">Time</th></tr></thead><tbody>' + steps + '</tbody></table>';
     var comps = row.comparables || [];
     var compHtml = comps.length ? '<table class="mini comp"><thead><tr><th scope="col">Token that trades</th><th scope="col">TVL</th><th scope="col">MCAP</th><th scope="col">x TVL</th><th scope="col">Applied here</th></tr></thead><tbody>' +
       comps.map(function (p) { return '<tr><td>' + esc(p.name) + '</td><td class="num">' + esc(fmtUsd(p.tvl_usd)) + '</td><td class="num">' + esc(fmtUsd(p.mcap_usd)) + '</td><td class="num">' + esc(fmtMult(p.multiple)) + '</td><td class="num">' + esc(fmtUsd(p.applied_usd)) + '</td></tr>'; }).join('') + '</tbody></table>'
@@ -395,16 +409,16 @@
       '<p class="sub">' + esc(row.category || 'Other') + ' on ' + esc(chainsOf(row)) + (isWatch(row) ? ' · on the watchlist' : (isAboveFloor(row) ? ' · above the floor' : ' · below the floor')) + '</p>' +
       '<p style="margin-top:8px"><span style="font-size:26px;color:var(--amber);font-family:var(--font-num);font-weight:600">' + esc(fmtUsd(row.implied_value_usd)) + '</span> <span class="sub">implied value · ' + esc(fmtUsd(row.value_low_usd)) + ' – ' + esc(fmtUsd(row.value_high_usd)) + ' range</span></p></div>' +
       '<button class="close" type="button" aria-label="Close details">Close</button></div>' +
+      '<section class="detail-section"><h3>Farm plan</h3>' + planSum + stepsHtml +
+      '<div class="arith"><div><span>At risk</span><b>' + esc(fmtUsd(dep)) + '</b></div><div><span>Fees</span><b>' + esc(fmtUsd(row.fees_usd)) + '</b></div><div><span>Your time</span><b>' + (row.time_hours !== undefined ? row.time_hours + ' h' : 'n/a') + '</b></div><div><span>Slice if it launches</span><b>' + esc(fmtNet(slice)) + '</b></div><div><span>Fees / slice</span><b>' + (be !== null ? Math.round(be * 100) + '%' : 'n/a') + '</b></div><div><span>Net per hour</span><b>' + (nph !== null ? esc(fmtNet(nph)) + '/h' : 'n/a') + '</b></div></div>' +
+      '<p class="sub" style="margin-top:8px">Slice if launch = value if it launches x drop share x deposit / TVL. Break-even odds = fees / slice. Net per hour = net at the current selection / time.</p></section>' +
       '<section class="detail-section"><h3>How the figure is made</h3><div class="chain">' + chainRows +
       '<div class="total"><span>Implied value</span><b class="num">' + esc(fmtUsd(row.implied_value_usd)) + '</b></div></div>' +
       '<p class="check ' + (ok ? 'ok' : 'bad') + '">Recomputed on this page: impliedOf gives ' + esc(fmtUsd(re)) + (ok ? ' — the same number board.json carries.' : ' — WARNING: this differs from the board value ' + esc(fmtUsd(row.implied_value_usd)) + '; the data would be stale.') + '</p>' +
       '<p class="why">Why this rank: ' + whyRank(row) + '</p></section>' +
       '<section class="detail-section"><h3>Nearest traded comparables</h3>' + compHtml + '</section>' +
       '<section class="detail-section"><h3>Verdict table — net of fees</h3>' + vtHtml +
-      '<p class="sub" style="margin-top:8px">Now: ' + esc(fmtUsd(dep)) + ' deposit, ' + Math.round(share * 1000) / 10 + '% drop share — net <b class="' + vClass(verdictSel(row)) + '">' + esc(fmtNet(net)) + ' · ' + esc(verdictSel(row)) + '</b>.</p></section>' +
-      '<section class="detail-section"><h3>Farm plan</h3>' + planSum + '<ol class="steps">' + steps + '</ol>' +
-      '<div class="arith"><div><span>At risk</span><b>' + esc(fmtUsd(dep)) + '</b></div><div><span>Fees</span><b>' + esc(fmtUsd(row.fees_usd)) + '</b></div><div><span>Your time</span><b>' + (row.time_hours !== undefined ? row.time_hours + ' h' : 'n/a') + '</b></div><div><span>Slice if it launches</span><b>' + esc(fmtNet(slice)) + '</b></div><div><span>Fees / slice</span><b>' + (be !== null ? Math.round(be * 100) + '%' : 'n/a') + '</b></div><div><span>Net per hour</span><b>' + (nph !== null ? esc(fmtNet(nph)) + '/h' : 'n/a') + '</b></div></div>' +
-      '<p class="sub" style="margin-top:8px">Slice if launch = value if it launches x drop share x deposit / TVL. Break-even odds = fees / slice. Net per hour = net at the current selection / time.</p></section>';
+      '<p class="sub" style="margin-top:8px">Now: ' + esc(fmtUsd(dep)) + ' deposit, ' + Math.round(share * 1000) / 10 + '% drop share — net <b class="' + vClass(verdictSel(row)) + '">' + esc(fmtNet(net)) + ' · ' + esc(verdictSel(row)) + '</b>.</p></section>';
     dialog.querySelector('.close').addEventListener('click', function () { dialog.close(); });
     if (typeof dialog.showModal === 'function') { if (!dialog.open) dialog.showModal(); }
     else dialog.setAttribute('open', '');
