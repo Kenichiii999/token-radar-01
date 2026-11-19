@@ -107,8 +107,9 @@ td:first-child .sub{white-space:nowrap}
 .farm thead th{position:static;color:var(--muted);font-size:11px}
 .farm td.num{white-space:normal;font-family:var(--font-num);font-size:12px}
 .farm td:first-child{white-space:nowrap}
-.farm td:nth-child(3){width:118px}
-.farm td:nth-child(4){width:82px}
+.farm td:nth-child(2){width:88px}
+.farm td:nth-child(4){width:100px}
+.farm td:nth-child(5){width:86px}
 .fwhy{display:block;color:var(--muted);font-size:12px;line-height:1.45;margin-top:2px}
 @media (max-width:900px){
   .shell{padding:var(--s4)}

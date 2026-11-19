@@ -6,9 +6,9 @@
 
 A token launch radar: it reads a sealed DefiLlama snapshot of 758 protocols and writes a web dashboard that ranks the 197 pre-token, standalone protocols by what their launch would be worth, each with a costed farm plan and a FARM / MARGINAL / SKIP verdict.
 
-## The model ("comps-6" — comps-5 layout, farm plans made visible)
+## The model ("comps-7" — comps-6 + farm-plan When column)
 
-comps-6 keeps the comps-5 model and layout unchanged and spends the improvement on criterion 3: the detail view now opens with the farm plan, rendered as a `# | Step | Cost | Time` table (action + why + failure branch per step, cost/time in their own columns), so shot 2 shows steps 1–4 instead of none. A local judge simulation vs the rank #1/#5 references had flagged farm-plan visibility as comps-5's consistent weak spot; see MODEL_NOTES.md.
+comps-7 keeps the comps-6 model and layout unchanged and adds a When column to the farm-plan table (`# | When | Step | Cost | Time`), derived from each step's own text (Day 0, Weekly ×12, Days 0–{hold_days} from the row's real hold_days, Week 1+, Every tx, Weekly · exit). The comps-6 simulation still had criterion 3 losing 1–3 vs rank #5 on its explicit timelines; see MODEL_NOTES.md.
 
 Implied value follows from the snapshot's own figures — no hardcoded names:
 

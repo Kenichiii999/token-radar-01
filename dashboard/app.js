@@ -372,15 +372,24 @@
       if (fi < 0) return { action: action, why: rest, ifb: '', cost: cost, time: time };
       return { action: action, why: rest.slice(0, fi + 1), ifb: rest.slice(fi + 2), cost: cost, time: time };
     }
+    function whenOf(a, hold) {
+      if (a.indexOf('Every week') === 0) return 'Weekly ×12';
+      if (a.indexOf('Hold ') === 0) return 'Days 0–' + hold;
+      if (a.indexOf('Before every transaction') === 0) return 'Every tx';
+      if (a.indexOf('Log the wallet') === 0) return 'Weekly · exit';
+      if (a.indexOf('points or rewards page') >= 0) return 'Week 1+';
+      if (a.indexOf('each week') >= 0) return 'Weekly';
+      return 'Day 0';
+    }
     var steps = (row.farm_steps || []).map(function (s, i) {
       var p = parseStep(s);
-      if (!p) return '<tr><td class="num">' + (i + 1) + '</td><td colspan="3">' + esc(s) + '</td></tr>';
-      return '<tr><td class="num">' + (i + 1) + '</td><td><b>' + esc(p.action) + '</b>' +
+      if (!p) return '<tr><td class="num">' + (i + 1) + '</td><td colspan="4">' + esc(s) + '</td></tr>';
+      return '<tr><td class="num">' + (i + 1) + '</td><td class="num">' + esc(whenOf(p.action, row.hold_days || 30)) + '</td><td><b>' + esc(p.action) + '</b>' +
         (p.why ? '<span class="fwhy">Why: ' + esc(p.why) + '</span>' : '') +
         (p.ifb ? '<span class="fwhy">' + esc(p.ifb) + '</span>' : '') + '</td>' +
         '<td class="num">' + esc(p.cost) + '</td><td class="num">' + esc(p.time) + '</td></tr>';
     }).join('');
-    var stepsHtml = '<table class="farm"><thead><tr><th scope="col">#</th><th scope="col">Step</th><th scope="col">Cost</th><th scope="col">Time</th></tr></thead><tbody>' + steps + '</tbody></table>';
+    var stepsHtml = '<table class="farm"><thead><tr><th scope="col">#</th><th scope="col">When</th><th scope="col">Step</th><th scope="col">Cost</th><th scope="col">Time</th></tr></thead><tbody>' + steps + '</tbody></table>';
     var comps = row.comparables || [];
     var compHtml = comps.length ? '<table class="mini comp"><thead><tr><th scope="col">Token that trades</th><th scope="col">TVL</th><th scope="col">MCAP</th><th scope="col">x TVL</th><th scope="col">Applied here</th></tr></thead><tbody>' +
       comps.map(function (p) { return '<tr><td>' + esc(p.name) + '</td><td class="num">' + esc(fmtUsd(p.tvl_usd)) + '</td><td class="num">' + esc(fmtUsd(p.mcap_usd)) + '</td><td class="num">' + esc(fmtMult(p.multiple)) + '</td><td class="num">' + esc(fmtUsd(p.applied_usd)) + '</td></tr>'; }).join('') + '</tbody></table>'
