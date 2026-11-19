@@ -6,9 +6,9 @@
 
 A token launch radar: it reads a sealed DefiLlama snapshot of 758 protocols and writes a web dashboard that ranks the 197 pre-token, standalone protocols by what their launch would be worth, each with a costed farm plan and a FARM / MARGINAL / SKIP verdict.
 
-## The model ("comps-11" — comps-10 + the ranked angles from the comps-10 sim: the 145-exclusion footnote on the board (C1), per-row farm cost/time in shot 1 (C3), visible filter chips in shot 3 (C4); model unchanged, board stays 197)
+## The model ("comps-12" — comps-11 + the ranked angles from the comps-11 sim: the 40/40 · 197 · 145-excluded coverage figures as the biggest KPI on the board (C1), a quotable one-line farm plan with bold cost/time in the detail view (C3), and a visible sort arrow on every sortable column header (C4); model unchanged, board stays 197)
 
-comps-11 keeps the comps-10 model and layout and attacks the three weak cells from the comps-10 sim: the lede now states the exclusion on the board ("197 pass the rule — 40 watchlist + 157 more. The other 145 fail it: 44 bridges incl. circle-gateway, 43 liquid staking, 42 CEX, 11 versioned, 5 wrapped — 0 pass", live from the accounting); every board row now shows its farm cost/time beside the verdict ("MARGINAL $2.20 · 2.8h", from the row's own fees and active hours); and the filtered view shows a filled "Watchlist only" chip above "40 of 197 rows · $440.9M implied in view". The 198th row does not exist under our own rules: all 145 excluded pre-token protocols fail at least one rule, so the board stays 197 rows. See MODEL_NOTES.md.
+comps-12 keeps the comps-11 model and layout and attacks the three weak cells from the comps-11 sim: the first KPI tile is now "WATCHLIST COVERED 40/40 — 197 rows · 145 excluded with reasons" (live from the accounting, amber-bordered); every detail view opens with a quotable plan line ("8 steps · $2.20 gas · 2.83h active · stop below 1.5% drop share", live from the row) with bold per-step Cost/Time; and every sortable header shows an arrow (amber ↑/↓ on the active sort, faint ↕ elsewhere). The 198th row does not exist under our own rules: all 145 excluded pre-token protocols fail at least one rule, so the board stays 197 rows. See MODEL_NOTES.md.
 
 Implied value follows from the snapshot's own figures — no hardcoded names:
 

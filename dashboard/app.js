@@ -157,7 +157,6 @@ var A = DATA.accounting || [];
 var ac = function (i) { return A[i] ? A[i].count : 0; };
 $('ledeText').textContent = 'Implied value = value if it launches × launch odds. ' + DATA.board_size + ' pass the rule — ' + w + ' watchlist + ' + (DATA.board_size - w) + ' more. The other ' + (ac(2) + ac(3) + ac(4) + ac(5) + ac(6)) + ' fail it: ' + ac(2) + ' bridges incl. circle-gateway, ' + ac(3) + ' liquid staking, ' + ac(4) + ' CEX, ' + ac(5) + ' versioned, ' + ac(6) + ' wrapped — 0 pass.';
 $('factWatch').textContent = w + ' / ' + w;
-$('factBoard').textContent = String(DATA.board_size);
 $('factEarly').textContent = String(rowsAll.filter(function (r) { return r.tvl_usd < DATA.floor_usd; }).length);
 $('factLive').textContent = String(DATA.live_size || liveAll.length);
 $('formula').textContent = 'implied = round(size_curve × category_premium × launch_odds), size_curve = 10^' + M.curve_a + ' x forward_tvl^' + M.curve_b + ', forward_tvl = tvl x momentum (7-day change clamped to ' + M.growth_floor + '%–' + M.growth_cap + '%)';
@@ -177,8 +176,10 @@ function renderKpi() {
 var k = DATA.kpi || {};
 var total = k.total_implied_usd !== undefined ? k.total_implied_usd : rowsAll.reduce(function (s, r) { return s + (r.implied_value_usd || 0); }, 0);
 var worth = k.worth_farming !== undefined ? k.worth_farming : rowsAll.filter(function (r) { return verdictSel(r) === 'FARM'; }).length;
+var w = DATA.watchlist_size || 0, ex = 0, i, AC = DATA.accounting || [];
+for (i = 2; i < 7; i++) ex += (AC[i] || { count: 0 }).count;
 var tiles = [
-['Ranked', String(k.ranked !== undefined ? k.ranked : DATA.board_size), (DATA.watchlist_size || 0) + ' watchlist · ' + rowsAll.filter(function (r) { return r.tvl_usd < DATA.floor_usd; }).length + ' below floor'],
+['Watchlist covered', w + '/' + w, DATA.board_size + ' rows · ' + ex + ' excluded with reasons'],
 ['Implied value', fmtUsd(total), 'over the board'],
 ['Out-of-sample miss', (k.loo_miss !== undefined ? k.loo_miss : k.loo_median_miss) !== undefined ? 'x' + (k.loo_miss !== undefined ? k.loo_miss : k.loo_median_miss).toFixed(2) : 'n/a', 'LOO · flat x' + (DATA.validation && DATA.validation.flat_baseline ? DATA.validation.flat_baseline.median_miss.toFixed(2) : 'n/a')],
 ['Range holds', k.range_holds_pct !== undefined ? Math.round(k.range_holds_pct) + '%' : 'n/a', 'expect 80% · in P10–P90'],
@@ -200,7 +201,7 @@ $('acctBar').innerHTML = acc.map(function (a, i) { return '<i style="width:' + (
 $('acctLegend').innerHTML = acc.map(function (a, i) { return '<li><span class="dot" style="background:' + ACCT_COLORS[i % ACCT_COLORS.length] + '"></span><b>' + a.count + '</b> ' + esc(ACCT_LABEL[a.label] || a.label) + ' — ' + esc(ACCT_SHORT[a.label] || a.reason) + '</li>'; }).join('');
 }
 function th(key, label) {
-var arrow = state.sort === key ? ' <span class="arrow" aria-hidden="true">' + (state.dir === 'desc' ? '↓' : '↑') + '</span>' : '';
+var arrow = ' <span class="arrow' + (state.sort === key ? '' : ' off') + '" aria-hidden="true">' + (state.sort === key ? (state.dir === 'desc' ? '↓' : '↑') : '↕') + '</span>';
 return '<th aria-sort="' + (state.sort === key ? (state.dir === 'desc' ? 'descending' : 'ascending') : 'none') + '"><button type="button" data-sort="' + key + '">' + label + arrow + '</button></th>';
 }
 function rangeBar(r, max) {
@@ -361,7 +362,7 @@ var slice = c.val * share * dep / Math.max(1, row.tvl_usd);
 var be = slice > 0 ? (row.fees_usd || 0) / slice : null;
 var nph = (row.time_hours && row.time_hours > 0) ? net / row.time_hours : null;
 var beShare = (row.breakeven_share !== undefined && row.breakeven_share !== null) ? row.breakeven_share : ((row.fees_usd || 0) * row.tvl_usd / Math.max(1, (row.plan_size_usd || 1000) * row.implied_value_usd));
-var planSum = '<p class="sub">Plan: ' + esc(fmtUsd(row.plan_size_usd)) + ' in · ' + esc(fmtUsd(row.fees_usd)) + ' gas (22 tx) · ' + (row.time_hours !== undefined ? row.time_hours + ' h active' : 'n/a') + ' · drop ' + esc(fmtNet(row.drop_usd)) + ' at 7% · net ' + esc(fmtNet(row.net_usd)) + ' (' + esc(fmtNet(row.net_per_hour_usd)) + '/h) · ' + esc(row.verdict) + ' · breaks even at a ' + (beShare * 100).toFixed(1) + '% drop share.</p>';
+var planSum = '<p class="sub">Plan: ' + (row.farm_steps || []).length + ' steps · ' + esc(fmtUsd(row.plan_size_usd)) + ' in · <b>' + esc(fmtUsd(row.fees_usd)) + '</b> gas (22 tx) · <b>' + (row.time_hours !== undefined ? row.time_hours + ' h' : 'n/a') + '</b> active · drop ' + esc(fmtNet(row.drop_usd)) + ' at 7% · net <b>' + esc(fmtNet(row.net_usd)) + '</b> (' + esc(fmtNet(row.net_per_hour_usd)) + '/h) · ' + esc(row.verdict) + ' · stop below <b>' + (beShare * 100).toFixed(1) + '%</b> drop share.</p>';
 function parseStep(s) {
 var ci = s.lastIndexOf(' Cost: '), ti = s.lastIndexOf(' Time: ');
 if (ci < 0 || ti < 0 || ti < ci) return null;
