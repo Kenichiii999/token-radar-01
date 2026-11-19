@@ -38,12 +38,12 @@
 <div class="field"><label for="chain">Chain</label><select id="chain" aria-label="Filter by chain"></select></div>
 <label class="toggle"><input type="checkbox" id="watch"> Watchlist only</label>
 <div class="field"><label for="verdict">Verdict</label><select id="verdict" aria-label="Filter by verdict"><option value="all">Any verdict</option><option value="FARM">Farm</option><option value="MARGINAL">Marginal</option><option value="SKIP">Skip</option></select></div>
-<div class="field"><label id="depLabel">Deposit</label><div class="seg" role="group" aria-labelledby="depLabel" id="depSeg"><button type="button" data-dep="1000">$1,000</button><button type="button" data-dep="plan" aria-pressed="true">Plan size</button><button type="button" data-dep="10000">$10,000</button></div></div>
-<div class="field"><label id="shareLabel">Drop share</label><div class="seg" role="group" aria-labelledby="shareLabel" id="shareSeg"><button type="button" data-share="0.035">3.5%</button><button type="button" data-share="0.07" aria-pressed="true">7%</button><button type="button" data-share="0.14">14%</button></div></div>
+<div class="field"><label id="depLabel">Deposit</label><div class="seg" role="group" aria-labelledby="depLabel" id="depSeg"><button data-dep="1000">$1,000</button><button data-dep="plan" aria-pressed="true">Plan size</button><button data-dep="10000">$10,000</button></div></div>
+<div class="field"><label id="shareLabel">Drop share</label><div class="seg" role="group" aria-labelledby="shareLabel" id="shareSeg"><button data-share="0.035">3.5%</button><button data-share="0.07" aria-pressed="true">7%</button><button data-share="0.14">14%</button></div></div>
 <div class="field"><label for="sortSel">Sort by</label><select id="sortSel" aria-label="Sort the board"><option value="rank">Rank</option><option value="net">Net of fees</option><option value="implied">Implied value</option><option value="name">Name</option><option value="tvl">TVL</option><option value="growth">7d change</option><option value="age">Age</option></select></div>
 <div class="tabs" role="group" aria-label="Token status">
-<button type="button" id="tabPre" aria-pressed="true">Pre-token</button>
-<button type="button" id="tabLive" aria-pressed="false">Live token</button>
+<button id="tabPre" aria-pressed="true">Pre-token</button>
+<button id="tabLive" aria-pressed="false">Live token</button>
 </div>
 <span class="count" id="count" aria-live="polite"></span>
 </div>
@@ -60,7 +60,7 @@
 <div id="empty" class="empty" hidden>
 <h2>No protocol matches that filter</h2>
 <p>Clear the search or pick another category or chain to see the board again.</p>
-<button class="button primary" type="button" id="clearFilters">Clear filters</button>
+<button class="button primary" id="clearFilters">Clear filters</button>
 </div>
 </div>
 </div>
