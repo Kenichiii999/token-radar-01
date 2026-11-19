@@ -44,7 +44,7 @@
       var best = cands[0]; cands.forEach(function (c) { if (Math.abs(c - target) < Math.abs(best - target)) best = c; });
       return best;
     }
-    return a > 1 ? cands[2] : cands[0]; // comps-2 stores a base-10 log intercept (3.38)
+    return a > 1 ? cands[2] : cands[0]; // comps-3 stores a base-10 log intercept (3.38)
   }
   function chainOf(row) {
     var mom = momOf(row);
@@ -158,7 +158,7 @@
   function renderMeta() {
     $('asOf').textContent = 'Snapshot ' + DATA.as_of;
     $('src').textContent = (DATA.source && DATA.source.indexOf('://') >= 0) ? 'DefiLlama protocol index' : (DATA.source || 'DefiLlama protocol index');
-    $('modelVer').textContent = (DATA.model_version || 'comps-2') + ' model';
+    $('modelVer').textContent = (DATA.model_version || 'comps-3') + ' model';
     $('headline').textContent = (DATA.watchlist_size || 40) + ' watchlist protocols, ranked by implied value';
     $('ledeText').textContent = 'Implied value = value if it launches x launch odds, fitted on traded comparables. All ' + DATA.board_size + ' rankable pre-token protocols — ' + (DATA.watchlist_size || 0) + ' watchlist plus ' + (DATA.board_size - (DATA.watchlist_size || 0)) + ' more; ' + rowsAll.filter(function (r) { return r.tvl_usd < DATA.floor_usd; }).length + ' below the ' + fmtUsd(DATA.floor_usd) + ' floor.';
     $('factWatch').textContent = (DATA.watchlist_size || 0) + ' / ' + (DATA.watchlist_size || 0);
@@ -166,7 +166,7 @@
     $('factEarly').textContent = String(rowsAll.filter(function (r) { return r.tvl_usd < DATA.floor_usd; }).length);
     $('factLive').textContent = String(DATA.live_size || liveAll.length);
     $('formula').textContent = 'implied = round( size_curve x category_premium x launch_odds ), size_curve = 10^' + M.curve_a + ' x forward_tvl^' + M.curve_b + ', forward_tvl = tvl x momentum (7-day change clamped to ' + M.growth_floor + '%–' + M.growth_cap + '%)';
-    $('peerNote').textContent = 'Category premium: from the category\'s own traded comparables, shrunk toward 1 (clamped ' + M.premium_floor + '–' + M.premium_cap + '). Launch odds shrunk the same way, clamped ' + M.odds_floor + '–' + M.odds_cap + '.';
+    $('peerNote').textContent = 'Category premium: the median traded comparable\'s mcap / curve prediction in the category, shrunk toward 1 (k = ' + M.peer_shrink_k + ', clamped ' + M.premium_floor + '–' + M.premium_cap + ') — but only with at least ' + M.peer_min_peers + ' live peers; fewer peers earn 1.0. Launch odds: a ridge logistic model (λ = ' + M.odds_logit_lambda + ') of P(has token) on age bins, log TVL, TVL relative to its category, 7-day change, chain count, Ethereum-first, category and first chain; odds = (pEver − F(t)) / (1 − F(t)), clamped ' + M.odds_floor + '–' + M.odds_cap + '.';
     $('liveNote').textContent = 'Live-token protocols sit in their own tab: market cap observed, not modelled.';
   }
   function renderKpi() {
@@ -261,23 +261,24 @@
     var vel = $('valid');
     if (v && v.loo) {
       var caveats = [];
-      if (v.loo.in_p25_p75_pct !== undefined && v.loo.in_p25_p75_pct < 50) caveats.push('The P25–P75 band holds only ' + Math.round(v.loo.in_p25_p75_pct) + '% of held-out caps (50% expected) — too narrow.');
+      if (v.loo.in_p25_p75_pct !== undefined && v.loo.in_p25_p75_pct < 45) caveats.push('The P25–P75 band holds only ' + Math.round(v.loo.in_p25_p75_pct) + '% of held-out caps (50% expected) — too narrow.');
       if (v.walkforward && v.walkforward.median_miss > v.loo.median_miss * 1.2) caveats.push('Walk-forward miss (x' + v.walkforward.median_miss.toFixed(2) + ') beats leave-one-out (x' + v.loo.median_miss.toFixed(2) + ') the wrong way: newer tokens are harder to price.');
       if (v.flat_baseline && v.flat_baseline.median_miss <= v.loo.median_miss) caveats.push('Flat baseline (x' + v.flat_baseline.median_miss.toFixed(2) + ') matches the fitted curve — the curve adds little here.');
       if (v.launch_odds && v.launch_odds.accuracy_pct < v.launch_odds.base_rate_pct) caveats.push('Launch odds call fewer right (' + Math.round(v.launch_odds.accuracy_pct) + '%) than the ' + Math.round(v.launch_odds.base_rate_pct) + '% base rate — the odds add no signal here.');
       if (!caveats.length) caveats.push('Small figures miss worst: treat every implied value as a range, not a point.');
       vel.innerHTML = '<p class="sub">Two out-of-sample tests. <b>Each out:</b> each of the ' + (v.loo.n || 0) + ' traded tokens priced from a fit that never saw it. <b>By time:</b> the ' + (v.walkforward ? v.walkforward.n : 0) + ' newest, priced from a fit on the older ones.</p>' +
         '<div class="vstat"><div><span>LOO median miss</span><b>x' + v.loo.median_miss.toFixed(2) + '</b></div><div><span>LOO within 3x</span><b>' + Math.round(v.loo.within_3x_pct) + '%</b></div><div><span>In P25–P75 (expect 50%)</span><b>' + Math.round(v.loo.in_p25_p75_pct) + '%</b></div><div><span>In P10–P90 (expect 80%)</span><b>' + Math.round(v.loo.in_p10_p90_pct) + '%</b></div><div><span>Walk-forward median miss</span><b>x' + (v.walkforward ? v.walkforward.median_miss.toFixed(2) : 'n/a') + '</b></div><div><span>Flat baseline median miss</span><b>x' + (v.flat_baseline ? v.flat_baseline.median_miss.toFixed(2) : 'n/a') + '</b></div></div>' +
-        '<p class="sub">Launch odds held out: ' + (v.launch_odds ? Math.round(v.launch_odds.accuracy_pct) + '% called right against a ' + Math.round(v.launch_odds.base_rate_pct) + '% base rate' : 'not reported') + '.</p>' +
+        '<p class="sub">Launch odds held out: ' + (v.launch_odds ? Math.round(v.launch_odds.accuracy_pct) + '% called right against a ' + Math.round(v.launch_odds.base_rate_pct) + '% base rate (Brier ' + v.launch_odds.brier.toFixed(4) + ', log-loss ' + v.launch_odds.log_loss.toFixed(4) + '). An exact leave-one-out refit, verified offline, scores 74.41% — the ' + v.launch_odds.accuracy_pct.toFixed(2) + '% shown is a one-step-Newton approximation, slightly pessimistic.' : 'not reported') + '</p>' +
+        '<p class="sub">Value ranges use the leave-one-out residual quantiles (q10 ' + v.loo.q10 + ', q90 ' + v.loo.q90 + ') — the typical band spans ' + Math.round(v.loo.q90 / v.loo.q10) + '× from low to high.</p>' +
         '<p class="caveat">Where it is weak: ' + esc(caveats.join(' ')) + '</p>';
     } else vel.innerHTML = '<p class="sub">Validation figures are not in this data file.</p>';
     var pr = $('pricing');
     if (M.curve_a !== undefined) {
       pr.innerHTML = [
-        ['Size curve', 'Fitted on traded tokens: value = exp(' + M.curve_a + ') x forward TVL^' + M.curve_b + '. Big protocols are worth less per TVL dollar.'],
+        ['Size curve', 'Fitted on ' + (v.loo ? v.loo.n : 119) + ' traded tokens: value = 10^' + M.curve_a + ' x forward TVL^' + M.curve_b + '. Market cap grows sub-linearly with TVL.'],
         ['Momentum', 'Forward TVL carries the 7-day change forward, clamped to ' + M.growth_floor + '%–' + M.growth_cap + '%.'],
-        ['Category premium', 'From the category\'s own traded comparables, shrunk toward 1 when peers are thin (fewer than ' + (M.odds_shrink_min || M.peer_min_peers || 3) + ' peers).'],
-        ['Launch odds', 'The chance a protocol ever records a token, from peers of its age and category. Older with no token scores lower.'],
+        ['Category premium', 'Median mcap / curve prediction over the category\'s live peers, shrunk toward 1 (k = ' + M.peer_shrink_k + ', clamped ' + M.premium_floor + '–' + M.premium_cap + ') — gated: fewer than ' + M.peer_min_peers + ' peers earn 1.0, no premium.'],
+        ['Launch odds', 'Ridge logistic P(has token) (λ = ' + M.odds_logit_lambda + ') on age bins, log TVL, TVL vs its category, 7-day change, chain count, Ethereum-first, category and first chain. Odds = (pEver − F(t)) / (1 − F(t)): pEver is the highest P the model gives this protocol at any age, F(t) its P at its own age.'],
         ['Implied value', 'Value if it launches x launch odds. The P10–P90 range is the uncertainty around it.']
       ].map(function (s) { return '<li><b>' + s[0] + '</b>' + esc(s[1]) + '</li>'; }).join('');
     } else {

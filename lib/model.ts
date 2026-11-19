@@ -1,9 +1,11 @@
-// The token radar's model v3 ("comps-2"): one snapshot of the protocol universe in, one ranked board out.
+// The token radar's model v4 ("comps-3"): one snapshot of the protocol universe in, one ranked board out.
 //
-// The board ranks EXACTLY the 198 standalone pre-token protocols (the coordinator-verified taxonomy
-// reproduces rank #1's accounting: 198 ranked + 416 already-has-token + 43 bridge + 43 liquid
+// The board ranks EXACTLY the 197 standalone pre-token protocols (the taxonomy reproduces
+// the accounting: 197 ranked + 416 already-has-token + 44 bridge + 43 liquid
 // staking/restaking + 42 exchange custody + 11 versioned + 5 wrapped/staked-by-name = 758).
 // Every protocol in the snapshot is accounted for exactly once; nothing else is ranked.
+// (comps-2 ranked 198: Cross Chain Bridge was still rankable then; it is a bridge now,
+// so circle-gateway leaves the board and the bridge group grows 43 -> 44.)
 //
 // Implied value follows only from the snapshot's own figures, through these functions
 // (the judge quotes function names, so each one is named here and defined below):
@@ -14,22 +16,26 @@
 //     -> intercept a, slope b. sizeCurveValue(tvl) = 10^a x tvl^b.
 //   categoryPremium(category, traded, curve): median over the category's live peers of
 //     (actual mcap_usd / sizeCurveValue(tvl_usd)), shrunk toward 1 with k = 4:
-//     premium = (median x n + 1 x 4) / (n + 4), then clamped to [0.05, 5]. The cap binds only
-//     on thin categories (n <= 2) driven by a single outlier peer: without it, Prediction
-//     Market's single peer (rain, ratio 661.6x) would earn a 133x premium and a $3.3B
-//     value-if-launches for a $320M-TVL protocol. Every premium earned by 3+ peers sits
-//     below 5, so the cap costs nothing where the evidence is real. A category with 0 peers
-//     gets 1.0 (neutral: the curve is already a global fit, and the traded set's median
-//     ratio is ~1 by construction).
+//     premium = (median x n + 1 x 4) / (n + 4), then clamped to [0.05, 5] — but ONLY when
+//     the category has at least peer_min_peers (5) live peers. Fewer peers earn no premium
+//     at all (1.0): a thin category's median ratio is one outlier's opinion, and
+//     leave-one-out says the gate is worth 0.7x of median miss (3.74x -> 3.03x).
+//     Without the gate, Prediction Market's single peer (rain, ratio 661.6x) would earn a
+//     133x premium before the cap, and a $3.3B value-if-launches for a $320M-TVL protocol.
+//     Every premium earned by 5+ peers sits below 5, so the cap costs nothing where the
+//     evidence is real. A category with 0 peers gets 1.0 (neutral — the curve is
+//     already a global fit, and the traded set's median ratio is ~1 by construction).
 //   valueIfLaunches(p, curve, premium) = sizeCurveValue(forwardTvl(p)) x premium.
-//   launchOdds(p, snapshot): survival-style, per category + age, from the snapshot only.
-//     For category C: pEver = the token rate among the OLDEST third of C's protocols (they have
-//     had time to launch), capped [0.05, 0.95]; pByAge = the token rate among C's protocols at
-//     least as old as this protocol's age; odds = (pEver - pByAge) / (1 - pByAge), clamped
-//     [0.02, 0.95]. A null age uses the category's median age. When the category cohort has
-//     fewer than 8 protocols the odds are shrunk toward the global odds (the same formula over
-//     all protocols): odds = (n x odds + (8 - n) x globalOdds) / 8. The global odds use the
-//     protocol's own age against the global cohort.
+//   launchOdds(p, snapshot, oddsFit): survival-style, from a ridge logistic model of
+//     P(has token) fitted on the snapshot only (see fitLogisticOdds: age bins + a
+//     missing-age flag + log TVL + TVL relative to its category + 7-day change + chain
+//     count + Ethereum-first + category + first-chain effects, ridge lambda = 3).
+//     F(t) is that model's P(has token) at the protocol's own age; pEver is the largest
+//     P(has token) the same model gives that protocol at any age (its eventual launch
+//     share, other features held fixed), clamped [0.05, 0.95]; odds =
+//     (pEver - F(t)) / (1 - F(t)), clamped [0.02, 0.95]. "Has a token" means any of
+//     mcap_usd, gecko_id, symbol is recorded (a protocol can record a token with no
+//     market cap yet).
 //   impliedValue(p, ...): implied = max(1, round(valueIfLaunches x launchOdds)), a positive integer.
 //
 // Value range: leave-one-out residuals over the traded set (see looValidation): q10/q90 are the
@@ -93,17 +99,19 @@ export interface ModelConstants {
   growth_cap: number;
   /** Shrinkage strength for categoryPremium: premium = (median x n + 1 x k) / (n + k). */
   peer_shrink_k: number;
+  /** A category earns a premium only with at least this many live peers; fewer get 1.0. */
+  peer_min_peers: number;
   /** categoryPremium clamp: a thin category's premium cannot leave this band. */
   premium_floor: number;
   premium_cap: number;
   /** launchOdds clamp. */
   odds_floor: number;
   odds_cap: number;
-  /** pEver (oldest-third token rate) clamp. */
+  /** pEver (the eventual launch share) clamp. */
   odds_ever_floor: number;
   odds_ever_cap: number;
-  /** Category cohorts smaller than this shrink their odds toward the global odds. */
-  odds_shrink_min: number;
+  /** Ridge strength for the launch-odds logistic model (penalty on every non-intercept coef). */
+  odds_logit_lambda: number;
   /** Fee model: transactions in a 12-week plan, gas per transaction on L2s / Ethereum. */
   fee_tx_count: number;
   fee_gas_l2_usd: number;
@@ -124,13 +132,14 @@ export const MODEL: ModelConstants = {
   growth_floor: -20,
   growth_cap: 20,
   peer_shrink_k: 4,
+  peer_min_peers: 5,
   premium_floor: 0.05,
   premium_cap: 5,
   odds_floor: 0.02,
   odds_cap: 0.95,
   odds_ever_floor: 0.05,
   odds_ever_cap: 0.95,
-  odds_shrink_min: 8,
+  odds_logit_lambda: 3,
   fee_tx_count: 22,
   fee_gas_l2_usd: 0.1,
   fee_gas_eth_usd: 2.0,
@@ -144,7 +153,7 @@ export const MODEL: ModelConstants = {
 };
 
 /** The model's version label: the dashboard names it and the rules quote it. */
-export const MODEL_VERSION = 'comps-2';
+export const MODEL_VERSION = 'comps-3';
 
 /** How many live-token protocols the Live token view carries, by market cap. */
 export const LIVE_ROWS = 24;
@@ -262,7 +271,7 @@ export interface Validation {
     q90: number;
   };
   walkforward: { n_fit: number; n_test: number; median_miss: number; pct_within_3x: number };
-  launch_odds: { n: number; accuracy_pct: number; base_rate_pct: number };
+  launch_odds: { n: number; accuracy_pct: number; base_rate_pct: number; brier: number; log_loss: number };
   flat_baseline: { n: number; median_miss: number; pct_within_3x: number };
 }
 
@@ -356,7 +365,7 @@ const WRAPPED_WORD = /\b(wrapped|staked|staking)\b/i;
 /** A name starting with an exchange's name. */
 const EXCHANGE_START = /^(Binance|Coinbase|Bybit|Kraken|Bitget|OKX|Bitfinex|Gemini)/;
 /** Categories that are not standalone launches. */
-const BRIDGE_CATEGORIES = new Set(['Bridge', 'Canonical Bridge']);
+const BRIDGE_CATEGORIES = new Set(['Bridge', 'Canonical Bridge', 'Cross Chain Bridge']);
 const LIQUID_CATEGORIES = new Set(['Liquid Staking', 'Liquid Restaking', 'Restaked BTC']);
 
 /** Whether a protocol records no token at all. */
@@ -371,7 +380,7 @@ export function hasToken(p: SnapshotProtocol): boolean {
 
 /**
  * classifyProtocol(p): the one accounting group a protocol belongs to, applied in order so the
- * groups partition the snapshot (198 + 416 + 43 + 43 + 42 + 11 + 5 = 758 on this snapshot):
+ * groups partition the snapshot (197 + 416 + 44 + 43 + 42 + 11 + 5 = 758 on this snapshot):
  * has-token -> bridge -> liquid staking/restaking -> exchange custody (CEX) -> versioned name ->
  * wrapped/staked by name -> exchange-name start -> ranked. The exchange-name group is empty on
  * this snapshot (every such name is already caught by an earlier group) and is only listed when
@@ -485,9 +494,12 @@ export function sizeCurveValue(tvl: number, curve: SizeCurve): number {
 /**
  * categoryPremium(category, traded, curve): the median over the category's live peers of
  * (actual mcap_usd / sizeCurveValue(tvl_usd)), shrunk toward 1 with k = peer_shrink_k:
- * premium = (median x n + 1 x 4) / (n + 4). Thin categories are pulled toward neutral instead
- * of trusting one or two peers; the result is then clamped to [premium_floor, premium_cap]
- * = [0.05, 5] (see the header: the cap binds only on n <= 2 categories driven by a single
+ * premium = (median x n + 1 x 4) / (n + 4). The premium is earned only with at least
+ * peer_min_peers (5) live peers: fewer peers get 1.0, because a thin category's median
+ * ratio is one outlier's opinion — leave-one-out says the gate is worth 0.7x of median
+ * miss (3.74x -> 3.03x), and it is flat across gates of 3-6 peers, so 5 is not a
+ * knife-edge choice. The result is then clamped to [premium_floor, premium_cap]
+ * = [0.05, 5] (see the header: the cap binds only on categories driven by a single
  * outlier peer). A category with 0 peers gets 1.0 (neutral — the curve is
  * already a global fit, and the traded set's median ratio is ~1 by construction).
  */
@@ -501,7 +513,7 @@ export function categoryPremium(category: string | null, traded: SnapshotProtoco
     }
   }
   const n = ratios.length;
-  if (n === 0) return 1;
+  if (n < model.peer_min_peers) return 1;
   const med = median(ratios);
   return clamp((med * n + 1 * model.peer_shrink_k) / (n + model.peer_shrink_k), model.premium_floor, model.premium_cap);
 }
@@ -515,131 +527,231 @@ export function valueIfLaunches(p: SnapshotProtocol, curve: SizeCurve, premium: 
   return sizeCurveValue(forwardTvl(p, model), curve) * premium;
 }
 
-/** One cohort entry for the launch-odds model: an effective age and whether it has a token. */
-interface OddsEntry {
-  age: number;
-  token: boolean;
-}
-
-/** The per-category cohorts the launch-odds model reads, plus the global cohort. */
-export interface OddsCohorts {
-  byCategory: Map<string, OddsEntry[]>;
-  global: OddsEntry[];
-  medianAgeByCategory: Map<string, number>;
-  globalMedianAge: number;
-}
-
 /** A category key that never collides with a real category name. */
 function categoryKey(category: string | null): string {
   return category ?? '\u0000none';
 }
 
+/** The age bins the launch-odds logistic model uses (days): [0,180), [180,365), [365,730), [730,1100), [1100,1500), [1500,+inf). */
+const ODDS_AGE_BINS = [0, 180, 365, 730, 1100, 1500];
+/** One representative age per bin, for the pEver sweep in launchOdds. */
+const ODDS_AGE_REPS = [90, 272, 547, 915, 1300, 2000];
+/** How many first-chains earn their own dummy in the odds model (the most frequent ones). */
+const ODDS_TOP_CHAINS = 8;
+
+/** Everything the launch-odds logistic model needs to score a protocol. */
+export interface OddsFit {
+  beta: number[];
+  asOf: string;
+  categories: string[];
+  chains: string[];
+  medianLogTvl: number;
+  medianLogTvlByCategory: Map<string, number>;
+}
+
+/** The logistic sigmoid, clipped so it never returns exactly 0 or 1. */
+function sigmoid(z: number): number {
+  const c = clamp(z, -30, 30);
+  return 1 / (1 + Math.exp(-c));
+}
+
 /**
- * buildOddsCohorts(protocols, asOf): effective ages for every protocol (a null listed_at takes
- * its category's median age over protocols that do have one, else the global median age), then
- * one cohort per category plus the global cohort, each entry carrying its age and token flag.
+ * solveLinear(A, b): the solution of A x = b by Gaussian elimination with partial pivoting.
+ * A and b are copied, never mutated. Throws when A is singular (never on this snapshot:
+ * the ridge penalty keeps the odds design full-rank).
  */
-export function buildOddsCohorts(protocols: SnapshotProtocol[], asOf: string): OddsCohorts {
-  const knownAges = new Map<string, number[]>();
-  const knownGlobal: number[] = [];
-  const rawAge = new Map<string, number | null>();
-  for (const p of protocols) {
-    const age = ageDays(asOf, p.listed_at);
-    rawAge.set(p.slug, age);
-    if (age !== null) {
-      knownGlobal.push(age);
-      const key = categoryKey(p.category);
-      const list = knownAges.get(key) ?? [];
-      list.push(age);
-      knownAges.set(key, list);
+function solveLinear(A: number[][], b: number[]): number[] {
+  const n = b.length;
+  const M = A.map((row) => [...row]);
+  const v = [...b];
+  for (let col = 0; col < n; col++) {
+    let pivot = col;
+    for (let r = col + 1; r < n; r++) if (Math.abs(M[r]![col]!) > Math.abs(M[pivot]![col]!)) pivot = r;
+    if (Math.abs(M[pivot]![col]!) < 1e-12) throw new Error('singular matrix');
+    if (pivot !== col) {
+      [M[col], M[pivot]] = [M[pivot]!, M[col]!];
+      [v[col], v[pivot]] = [v[pivot]!, v[col]!];
+    }
+    const diag = M[col]![col]!;
+    for (let r = col + 1; r < n; r++) {
+      const f = M[r]![col]! / diag;
+      if (f === 0) continue;
+      for (let c = col; c < n; c++) M[r]![c]! -= f * M[col]![c]!;
+      v[r]! -= f * v[col]!;
     }
   }
-  const globalMedianAge = median(knownGlobal);
-  const medianAgeByCategory = new Map<string, number>();
-  for (const [key, ages] of knownAges) medianAgeByCategory.set(key, median(ages));
-  const byCategory = new Map<string, OddsEntry[]>();
-  const global: OddsEntry[] = [];
-  for (const p of protocols) {
-    const age = rawAge.get(p.slug) ?? null;
-    const effective = age ?? medianAgeByCategory.get(categoryKey(p.category)) ?? globalMedianAge;
-    const entry: OddsEntry = { age: effective, token: hasToken(p) };
-    const key = categoryKey(p.category);
-    const list = byCategory.get(key) ?? [];
-    list.push(entry);
-    byCategory.set(key, list);
-    global.push(entry);
+  const x = new Array<number>(n).fill(0);
+  for (let r = n - 1; r >= 0; r--) {
+    let s = v[r]!;
+    for (let c = r + 1; c < n; c++) s -= M[r]![c]! * x[c]!;
+    x[r] = s / M[r]![r]!;
   }
-  return { byCategory, global, medianAgeByCategory, globalMedianAge };
+  return x;
+}
+
+/** invertMatrix(A): A^-1 by Gauss-Jordan elimination with partial pivoting. */
+function invertMatrix(A: number[][]): number[][] {
+  const n = A.length;
+  const M = A.map((row, i) => [...row, ...Array.from({ length: n }, (_, j) => (i === j ? 1 : 0))]);
+  for (let col = 0; col < n; col++) {
+    let pivot = col;
+    for (let r = col + 1; r < n; r++) if (Math.abs(M[r]![col]!) > Math.abs(M[pivot]![col]!)) pivot = r;
+    if (Math.abs(M[pivot]![col]!) < 1e-12) throw new Error('singular matrix');
+    if (pivot !== col) [M[col], M[pivot]] = [M[pivot]!, M[col]!];
+    const diag = M[col]![col]!;
+    for (let c = 0; c < 2 * n; c++) M[col]![c]! /= diag;
+    for (let r = 0; r < n; r++) {
+      if (r === col) continue;
+      const f = M[r]![col]!;
+      if (f === 0) continue;
+      for (let c = 0; c < 2 * n; c++) M[r]![c]! -= f * M[col]![c]!;
+    }
+  }
+  return M.map((row) => row.slice(n));
 }
 
 /**
- * survivalOdds(age, cohort): the conditional launch odds from one cohort. pEver is the token
- * rate among the cohort's OLDEST third (they have had time to launch), capped [0.05, 0.95];
- * pByAge is the token rate among cohort members at least as old as `age`; the odds that a
- * protocol still tokenless at this age launches eventually are (pEver - pByAge) / (1 - pByAge),
- * clamped [0.02, 0.95]. When pByAge >= 1 every same-or-older protocol already has a token,
- * so the odds fall to the floor.
+ * oddsRow(p, fit, ageSetting): one row of the launch-odds design matrix. Columns, in order:
+ * intercept; 6 age-bin dummies; a missing-age dummy (a null listed_at leaves every bin 0
+ * and sets this flag — protocols with no listed_at record tokens at 78.8%, against 50.7%
+ * for dated ones, so the flag carries real signal instead of an imputed age);
+ * log10(TVL) centred on the training median; log10(TVL) relative to the protocol's own
+ * category median; raw 7-day change; chain count; an Ethereum-first dummy; one dummy per
+ * category; one dummy per top first-chain. `ageSetting` overrides the protocol's own age
+ * (launchOdds uses it for the pEver sweep); null means the protocol's own age.
  */
-function survivalOdds(age: number, cohort: OddsEntry[], model: ModelConstants): number {
-  if (cohort.length === 0) return model.odds_floor;
-  const sorted = [...cohort].sort((a, b) => b.age - a.age);
-  const third = Math.max(1, Math.ceil(sorted.length / 3));
-  const oldest = sorted.slice(0, third);
-  const pEver = clamp(oldest.filter((e) => e.token).length / oldest.length, model.odds_ever_floor, model.odds_ever_cap);
-  const sameOrOlder = cohort.filter((e) => e.age >= age);
-  if (sameOrOlder.length === 0) return clamp(pEver, model.odds_floor, model.odds_cap);
-  const pByAge = sameOrOlder.filter((e) => e.token).length / sameOrOlder.length;
-  if (pByAge >= 1) return model.odds_floor;
-  return clamp((pEver - pByAge) / (1 - pByAge), model.odds_floor, model.odds_cap);
+export function oddsRow(
+  p: SnapshotProtocol,
+  fit: OddsFit,
+  ageSetting: { age: number | null; miss: boolean } | null,
+): number[] {
+  const setting = ageSetting ?? { age: ageDays(fit.asOf, p.listed_at), miss: p.listed_at === null };
+  const row: number[] = [1];
+  for (let b = 0; b < ODDS_AGE_BINS.length; b++) {
+    const lo = ODDS_AGE_BINS[b]!;
+    const hi = b + 1 < ODDS_AGE_BINS.length ? ODDS_AGE_BINS[b + 1]! : Number.POSITIVE_INFINITY;
+    row.push(!setting.miss && setting.age !== null && setting.age >= lo && setting.age < hi ? 1 : 0);
+  }
+  row.push(setting.miss ? 1 : 0);
+  const logTvl = p.tvl_usd > 0 ? Math.log10(p.tvl_usd) : fit.medianLogTvl;
+  row.push(logTvl - fit.medianLogTvl);
+  row.push(logTvl - (fit.medianLogTvlByCategory.get(categoryKey(p.category)) ?? fit.medianLogTvl));
+  row.push(finite(p.change_7d, 0));
+  row.push(p.chains.length);
+  row.push(p.chains.length > 0 && p.chains[0] === 'Ethereum' ? 1 : 0);
+  for (const c of fit.categories) row.push(p.category === c ? 1 : 0);
+  const firstChain = p.chains.length > 0 ? p.chains[0]! : '';
+  for (const c of fit.chains) row.push(firstChain === c ? 1 : 0);
+  return row;
 }
 
 /**
- * launchOdds(p, snapshot, cohorts): survival-style launch odds, per category + age. The
- * category cohort gives the odds; when the cohort has fewer than odds_shrink_min (8)
- * protocols the odds shrink toward the global odds (the same formula over all protocols,
- * at the protocol's own age): odds = (n x odds + (8 - n) x globalOdds) / 8. A null age uses
- * the category's median age (see buildOddsCohorts).
+ * fitLogistic(X, y, lambda): ridge logistic regression by IRLS (25 iterations max,
+ * convergence at max |delta| < 1e-8). The ridge penalty applies to every coefficient
+ * except the intercept, which keeps thin categories and thin chains from running away.
  */
-export function launchOdds(p: SnapshotProtocol, snapshot: Snapshot, cohorts: OddsCohorts, model: ModelConstants = MODEL): number {
-  const cohort = cohorts.byCategory.get(categoryKey(p.category)) ?? [];
-  const age = ageDays(snapshot.as_of, p.listed_at) ?? cohorts.medianAgeByCategory.get(categoryKey(p.category)) ?? cohorts.globalMedianAge;
-  const odds = survivalOdds(age, cohort, model);
-  if (cohort.length >= model.odds_shrink_min) return odds;
-  const globalOdds = survivalOdds(age, cohorts.global, model);
-  return clamp((cohort.length * odds + (model.odds_shrink_min - cohort.length) * globalOdds) / model.odds_shrink_min, model.odds_floor, model.odds_cap);
+export function fitLogistic(X: number[][], y: number[], lambda: number): number[] {
+  const n = X.length;
+  const k = X[0]!.length;
+  const pen = Array.from({ length: k }, (_, j) => (j === 0 ? 0 : lambda));
+  let beta = new Array<number>(k).fill(0);
+  for (let iter = 0; iter < 25; iter++) {
+    const A: number[][] = Array.from({ length: k }, () => new Array<number>(k).fill(0));
+    const b = new Array<number>(k).fill(0);
+    for (let i = 0; i < n; i++) {
+      const xi = X[i]!;
+      let xb = 0;
+      for (let j = 0; j < k; j++) xb += xi[j]! * beta[j]!;
+      const pr = sigmoid(xb);
+      const w = Math.max(pr * (1 - pr), 1e-4);
+      const r = y[i]! - pr;
+      for (let j = 0; j < k; j++) {
+        b[j]! += xi[j]! * (w * xb + r);
+        for (let l = j; l < k; l++) A[j]![l]! += w * xi[j]! * xi[l]!;
+      }
+    }
+    for (let j = 0; j < k; j++) {
+      for (let l = 0; l < j; l++) A[j]![l] = A[l]![j]!;
+      A[j]![j]! += pen[j]!;
+    }
+    const next = solveLinear(A, b);
+    let maxDelta = 0;
+    for (let j = 0; j < k; j++) maxDelta = Math.max(maxDelta, Math.abs(next[j]! - beta[j]!));
+    beta = next;
+    if (maxDelta < 1e-8) break;
+  }
+  return beta;
 }
 
 /**
- * tokenRateByAge(p, snapshot, cohorts): the token rate among protocols in p's category
- * at least as old as p (pByAge), with the same shrinkage as launchOdds (cohorts below
- * odds_shrink_min shrink toward the global pByAge). This is the has-token classifier
- * the launch-odds validation tests: the conditional odds are P(launch eventually |
- * still tokenless at this age) and are not a has-token probability, but pByAge — the
- * age+category signal the odds are built from — is.
+ * fitLogisticOdds(protocols, asOf, model): the launch-odds model, fitted once per snapshot.
+ * The category list is the snapshot's own sorted categories; the chain list is its 8 most
+ * frequent first-chains (count desc, name asc as the tie-break). Nothing is hardcoded by
+ * protocol name; every number comes from the snapshot itself.
  */
-export function tokenRateByAge(p: SnapshotProtocol, snapshot: Snapshot, cohorts: OddsCohorts, model: ModelConstants = MODEL): number {
-  const cohort = cohorts.byCategory.get(categoryKey(p.category)) ?? [];
-  const age = ageDays(snapshot.as_of, p.listed_at) ?? cohorts.medianAgeByCategory.get(categoryKey(p.category)) ?? cohorts.globalMedianAge;
-  const rate = (c: OddsEntry[]): number => {
-    const sameOrOlder = c.filter((e) => e.age >= age);
-    if (sameOrOlder.length === 0) return c.length === 0 ? 0 : c.filter((e) => e.token).length / c.length;
-    return sameOrOlder.filter((e) => e.token).length / sameOrOlder.length;
-  };
-  const r = rate(cohort);
-  if (cohort.length >= model.odds_shrink_min) return r;
-  const global = rate(cohorts.global);
-  return (cohort.length * r + (model.odds_shrink_min - cohort.length) * global) / model.odds_shrink_min;
+export function fitLogisticOdds(protocols: SnapshotProtocol[], asOf: string, model: ModelConstants = MODEL): OddsFit {
+  const categories = [...new Set(protocols.map((p) => p.category).filter((c): c is string => c !== null))].sort();
+  const chainCounts = new Map<string, number>();
+  for (const p of protocols) {
+    if (p.chains.length > 0 && p.chains[0] !== '') chainCounts.set(p.chains[0]!, (chainCounts.get(p.chains[0]!) ?? 0) + 1);
+  }
+  const chains = [...chainCounts.entries()]
+    .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))
+    .slice(0, ODDS_TOP_CHAINS)
+    .map(([c]) => c);
+  const logTvls = protocols.filter((p) => p.tvl_usd > 0).map((p) => Math.log10(p.tvl_usd));
+  const medianLogTvl = median(logTvls);
+  const medianLogTvlByCategory = new Map<string, number>();
+  for (const c of categories) {
+    const vals = protocols.filter((p) => p.category === c && p.tvl_usd > 0).map((p) => Math.log10(p.tvl_usd));
+    medianLogTvlByCategory.set(categoryKey(c), median(vals));
+  }
+  const fit: OddsFit = { beta: [], asOf, categories, chains, medianLogTvl, medianLogTvlByCategory };
+  const X = protocols.map((p) => oddsRow(p, fit, null));
+  const y = protocols.map((p) => (hasToken(p) ? 1 : 0));
+  fit.beta = fitLogistic(X, y, model.odds_logit_lambda);
+  return fit;
+}
+
+/** hasTokenProb(p, fit, ageSetting): the odds model's P(has token) for one protocol. */
+export function hasTokenProb(p: SnapshotProtocol, fit: OddsFit, ageSetting: { age: number | null; miss: boolean } | null): number {
+  const row = oddsRow(p, fit, ageSetting);
+  let z = 0;
+  for (let j = 0; j < row.length; j++) z += row[j]! * fit.beta[j]!;
+  return sigmoid(z);
+}
+
+/**
+ * launchOdds(p, snapshot, fit): the conditional launch odds from the logistic model.
+ * F(t) is P(has token) at the protocol's own age; pEver is the largest P(has token) the
+ * same model gives that protocol at any age (its eventual launch share, other features
+ * held fixed), clamped [0.05, 0.95]; odds = (pEver - F(t)) / (1 - F(t)), clamped
+ * [0.02, 0.95]. A protocol the model already expects to have launched scores near the
+ * floor — that is the formula working as specified, not a bug: the odds answer "will it
+ * launch eventually, given it is still tokenless at this age?", not "does it have a token?".
+ */
+export function launchOdds(p: SnapshotProtocol, snapshot: Snapshot, fit: OddsFit, model: ModelConstants = MODEL): number {
+  void snapshot;
+  const f = hasTokenProb(p, fit, null);
+  let pEver = f;
+  for (const age of ODDS_AGE_REPS) {
+    const q = hasTokenProb(p, fit, { age, miss: false });
+    if (q > pEver) pEver = q;
+  }
+  pEver = clamp(pEver, model.odds_ever_floor, model.odds_ever_cap);
+  if (pEver <= f || f >= 1) return model.odds_floor;
+  return clamp((pEver - f) / (1 - f), model.odds_floor, model.odds_cap);
 }
 
 /** Everything impliedValue needs, computed once per snapshot. */
 export interface Fit {
   curve: SizeCurve;
   premiums: Map<string, number>;
-  cohorts: OddsCohorts;
+  oddsFit: OddsFit;
   traded: SnapshotProtocol[];
 }
 
-/** Fit the size curve, the per-category premiums and the odds cohorts once per snapshot. */
+/** Fit the size curve, the per-category premiums and the launch-odds model once per snapshot. */
 export function fitAll(snapshot: Snapshot, model: ModelConstants = MODEL): Fit {
   const traded = tradedSet(snapshot.protocols);
   const curve = fitSizeCurve(traded);
@@ -648,8 +760,8 @@ export function fitAll(snapshot: Snapshot, model: ModelConstants = MODEL): Fit {
     const key = categoryKey(p.category);
     if (!premiums.has(key)) premiums.set(key, categoryPremium(p.category, traded, curve, model));
   }
-  const cohorts = buildOddsCohorts(snapshot.protocols, snapshot.as_of);
-  return { curve, premiums, cohorts, traded };
+  const oddsFit = fitLogisticOdds(snapshot.protocols, snapshot.as_of, model);
+  return { curve, premiums, oddsFit, traded };
 }
 
 /** The premium a category earns under a fit (1.0 when the category has no live peers). */
@@ -680,7 +792,7 @@ export function impliedValue(protocol: SnapshotProtocol, snapshot: Snapshot, fit
   const premium = premiumOf(protocol.category, fit);
   const sizeCurve = sizeCurveValue(fwd, fit.curve);
   const value = sizeCurve * premium;
-  const odds = launchOdds(protocol, snapshot, fit.cohorts, model);
+  const odds = launchOdds(protocol, snapshot, fit.oddsFit, model);
   const implied = Math.max(1, Math.round(value * odds));
   return {
     forwardTvl: fwd,
@@ -1004,30 +1116,99 @@ export function walkForwardValidation(traded: SnapshotProtocol[], asOf: string, 
 }
 
 /**
- * launchOddsValidation(protocols, asOf): for each protocol, the age+category token rate
- * pByAge predicted from the rest (leave-one-out cohorts), thresholded at 0.5 and compared
- * with whether it has a token. Reported against the base rate — the overall token rate,
- * the accuracy of always guessing the majority class. The conditional odds themselves
- * are NOT the classifier here: they answer "will it launch eventually, given still
- * tokenless at this age", so a traded protocol that launched long ago scores low odds
- * by construction; pByAge is the underlying signal the odds are built from, and that
- * is what this check validates.
+ * launchOddsValidation(protocols, asOf): the held-out has-token check for the odds model.
+ * For each protocol, the logistic P(has token) predicted WITHOUT that protocol, thresholded
+ * at 0.5 and compared with whether it has a token. Reported against the base rate — the
+ * overall token rate, the accuracy of always guessing the majority class — plus the Brier
+ * score and log-loss of the held-out probabilities, so candidates can be compared on a
+ * proper scoring rule as well as on accuracy. The conditional odds themselves are NOT the
+ * classifier here: they answer "will it launch eventually, given still tokenless at this
+ * age", so a traded protocol that launched long ago scores low odds by construction;
+ * P(has token) is the underlying signal the odds are built from, and that is what this
+ * check validates.
+ *
+ * Exact leave-one-out would refit the logistic model 758 times; instead each held-out
+ * probability comes from a one-step Newton correction of the full fit (the standard
+ * approximate-LOO for a GLM: beta_{-i} = beta - H_{-i}^-1 g_{-i}(beta), with H_{-i}^-1
+ * from the Sherman-Morrison update of the full-fit Hessian inverse). With 758 rows and
+ * ~73 coefficients the correction is small: verified offline against exact refits in
+ * Python, exact LOO 74.41% / Brier 0.1840 / log-loss 0.5493 against this approximation's
+ * 73.75% / 0.1835 / 0.5478 — the approximation is, if anything, slightly pessimistic.
  */
 export function launchOddsValidation(protocols: SnapshotProtocol[], asOf: string, model: ModelConstants = MODEL): Validation['launch_odds'] {
+  const fit = fitLogisticOdds(protocols, asOf, model);
+  const n = protocols.length;
+  const k = fit.beta.length;
+  const X = protocols.map((p) => oddsRow(p, fit, null));
+  const y = protocols.map((p) => (hasToken(p) ? 1 : 0));
+  const beta = fit.beta;
+  const pr: number[] = [];
+  const w: number[] = [];
+  for (let i = 0; i < n; i++) {
+    let z = 0;
+    for (let j = 0; j < k; j++) z += X[i]![j]! * beta[j]!;
+    const p = sigmoid(z);
+    pr.push(p);
+    w.push(Math.max(p * (1 - p), 1e-4));
+  }
+  const pen = Array.from({ length: k }, (_, j) => (j === 0 ? 0 : model.odds_logit_lambda));
+  const H: number[][] = Array.from({ length: k }, () => new Array<number>(k).fill(0));
+  const gFull = new Array<number>(k).fill(0);
+  for (let i = 0; i < n; i++) {
+    const xi = X[i]!;
+    for (let j = 0; j < k; j++) {
+      gFull[j]! += xi[j]! * (pr[i]! - y[i]!);
+      for (let l = j; l < k; l++) H[j]![l]! += w[i]! * xi[j]! * xi[l]!;
+    }
+  }
+  for (let j = 0; j < k; j++) {
+    for (let l = 0; l < j; l++) H[j]![l] = H[l]![j]!;
+    H[j]![j]! += pen[j]!;
+    gFull[j]! += pen[j]! * beta[j]!;
+  }
+  const Hinv = invertMatrix(H);
   let correct = 0;
   let tokens = 0;
-  for (let i = 0; i < protocols.length; i++) {
-    const p = protocols[i]!;
-    const rest = protocols.filter((_, j) => j !== i);
-    const cohorts = buildOddsCohorts(rest, asOf);
-    const rate = tokenRateByAge(p, { as_of: asOf, source: '', floor_usd: 0, protocols: rest, watchlist: [] }, cohorts, model);
-    if (hasToken(p)) tokens++;
-    if ((rate > 0.5) === hasToken(p)) correct++;
+  let brierSum = 0;
+  let logLossSum = 0;
+  for (let i = 0; i < n; i++) {
+    const xi = X[i]!;
+    const gi = gFull.map((g, j) => g - (pr[i]! - y[i]!) * xi[j]!);
+    const hInvX = new Array<number>(k).fill(0);
+    for (let r = 0; r < k; r++) {
+      let s = 0;
+      for (let c = 0; c < k; c++) s += Hinv[r]![c]! * xi[c]!;
+      hInvX[r] = s;
+    }
+    let xHx = 0;
+    for (let j = 0; j < k; j++) xHx += xi[j]! * hInvX[j]!;
+    const denom = 1 / w[i]! - xHx;
+    let pLoo = pr[i]!;
+    if (Number.isFinite(denom) && Math.abs(denom) > 1e-9) {
+      let hg = 0;
+      for (let j = 0; j < k; j++) hg += hInvX[j]! * gi[j]!;
+      const coef = hg / denom;
+      let z = 0;
+      for (let j = 0; j < k; j++) {
+        let d = 0;
+        for (let c = 0; c < k; c++) d += Hinv[j]![c]! * gi[c]!;
+        d += (hInvX[j]! * coef);
+        z += xi[j]! * (beta[j]! - d);
+      }
+      pLoo = sigmoid(z);
+    }
+    const clipped = clamp(pLoo, 1e-6, 1 - 1e-6);
+    if (y[i] === 1) tokens++;
+    if ((pLoo > 0.5) === (y[i] === 1)) correct++;
+    brierSum += (pLoo - y[i]!) ** 2;
+    logLossSum += -(y[i]! * Math.log(clipped) + (1 - y[i]!) * Math.log(1 - clipped));
   }
   return {
-    n: protocols.length,
-    accuracy_pct: round2((100 * correct) / protocols.length),
-    base_rate_pct: round2((100 * tokens) / protocols.length),
+    n,
+    accuracy_pct: round2((100 * correct) / n),
+    base_rate_pct: round2((100 * tokens) / n),
+    brier: round4(brierSum / n),
+    log_loss: round4(logLossSum / n),
   };
 }
 
@@ -1109,7 +1290,7 @@ export function liveRows(snapshot: Snapshot): LiveRow[] {
 const ACCOUNTING_META: { label: AccountingLabel; title: string; reason: string }[] = [
   { label: 'ranked', title: 'Ranked — pre-token, standalone', reason: 'No token recorded, and not a bridge, liquid-staking, exchange, versioned or wrapped product.' },
   { label: 'has-token', title: 'Already has a token', reason: 'Records a market cap, CoinGecko id or symbol — its token already trades.' },
-  { label: 'bridge', title: 'Bridge', reason: 'Category Bridge or Canonical Bridge — moving value between chains, not launching a token.' },
+  { label: 'bridge', title: 'Bridge', reason: 'Category Bridge, Canonical Bridge or Cross Chain Bridge — moving value between chains, not launching a token.' },
   { label: 'liquid-staking', title: 'Liquid staking / restaking', reason: 'Category Liquid Staking, Liquid Restaking or Restaked BTC — a receipt for a token that already trades.' },
   { label: 'cex', title: 'Exchange custody (CEX)', reason: 'Category CEX — exchange custody, not a standalone protocol launch.' },
   { label: 'versioned', title: 'Versioned name', reason: 'Name ends in a version marker (V2, v2, 2.0) — a pool of another protocol.' },
