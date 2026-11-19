@@ -281,7 +281,7 @@ if (v.walkforward && v.walkforward.median_miss > v.loo.median_miss * 1.2) caveat
 if (v.flat_baseline && v.flat_baseline.median_miss <= v.loo.median_miss) caveats.push('Flat baseline (x' + v.flat_baseline.median_miss.toFixed(2) + ') matches the fitted curve — the curve adds little here.');
 if (v.launch_odds && v.launch_odds.accuracy_pct < v.launch_odds.base_rate_pct) caveats.push('Launch odds call fewer right (' + Math.round(v.launch_odds.accuracy_pct) + '%) than the ' + Math.round(v.launch_odds.base_rate_pct) + '% base rate — the odds add no signal here.');
 if (!caveats.length) caveats.push('Small figures miss worst.');
-vel.innerHTML = '<p class="formula">size curve: 10^' + M.curve_a + ' × forward TVL^' + M.curve_b + ' — fitted on ' + (v.loo.n || 0) + ' traded tokens</p>' +
+vel.innerHTML = '<p class="formula">implied = 10^' + M.curve_a + ' × forward TVL^' + M.curve_b + ' × premium × odds — fitted on ' + (v.loo.n || 0) + ' traded tokens</p>' +
 '<p class="sub">Out-of-sample tests: <b>Each out:</b> each of the ' + (v.loo.n || 0) + ' traded tokens priced from a fit that never saw it. <b>By time:</b> the ' + (v.walkforward ? v.walkforward.n : 0) + ' newest, from a fit on the older ones.</p>' +
 '<div class="vstat"><div><span>LOO median miss</span><b>x' + v.loo.median_miss.toFixed(2) + '</b></div><div><span>LOO within 3x</span><b>' + Math.round(v.loo.within_3x_pct) + '%</b></div><div><span>In P25–P75 (expect 50%)</span><b>' + Math.round(v.loo.in_p25_p75_pct) + '%</b></div><div><span>In P10–P90 (expect 80%)</span><b>' + Math.round(v.loo.in_p10_p90_pct) + '%</b></div><div><span>Walk-forward median miss</span><b>x' + (v.walkforward ? v.walkforward.median_miss.toFixed(2) : 'n/a') + '</b></div><div><span>Flat baseline median miss</span><b>x' + (v.flat_baseline ? v.flat_baseline.median_miss.toFixed(2) : 'n/a') + '</b></div></div>' +
 '<p class="sub">Launch odds held out: ' + (v.launch_odds ? Math.round(v.launch_odds.accuracy_pct) + '% right vs ' + Math.round(v.launch_odds.base_rate_pct) + '% base (Brier ' + v.launch_odds.brier.toFixed(4) + ', log-loss ' + v.launch_odds.log_loss.toFixed(4) + '). An independent exact leave-one-out refit, verified offline, also scores 73.75% — the figure shown is a one-step-Newton approximation that agrees with it.' : 'not reported') + '</p>' +
@@ -357,12 +357,13 @@ rowsAll.some(function (r) { if (r.slug === slug) { row = r; return true; } retur
 if (!row) return;
 state.selected = slug; writeHash();
 var c = chainOf(row), re = c.imp, ok = Math.abs(re - row.implied_value_usd) <= Math.max(2000, row.implied_value_usd * 0.005);
-var dep = depVal(row), share = shareVal(), net = netSel(row);
+var dep = depVal(row), share = shareVal(), net = netSel(row), vv = verdictSel(row);
 var slice = c.val * share * dep / Math.max(1, row.tvl_usd);
 var be = slice > 0 ? (row.fees_usd || 0) / slice : null;
 var nph = (row.time_hours && row.time_hours > 0) ? net / row.time_hours : null;
 var beShare = (row.breakeven_share !== undefined && row.breakeven_share !== null) ? row.breakeven_share : ((row.fees_usd || 0) * row.tvl_usd / Math.max(1, (row.plan_size_usd || 1000) * row.implied_value_usd));
-var planSum = '<p class="sub">Plan: ' + (row.farm_steps || []).length + ' steps · ' + esc(fmtUsd(row.plan_size_usd)) + ' in · <b>' + esc(fmtUsd(row.fees_usd)) + '</b> gas (22 tx) · <b>' + (row.time_hours !== undefined ? row.time_hours + ' h' : 'n/a') + '</b> active · drop ' + esc(fmtNet(row.drop_usd)) + ' at 7% · net <b>' + esc(fmtNet(row.net_usd)) + '</b> (' + esc(fmtNet(row.net_per_hour_usd)) + '/h) · ' + esc(row.verdict) + ' · stop below <b>' + (beShare * 100).toFixed(1) + '%</b> drop share.</p>';
+var planSum = '<p class="sub">Plan: ' + (row.farm_steps || []).length + ' steps · ' + esc(fmtUsd(row.plan_size_usd)) + ' in · <b>' + esc(fmtUsd(row.fees_usd)) + '</b> gas (22 tx) · <b>' + (row.time_hours !== undefined ? row.time_hours + ' h' : 'n/a') + '</b> active · drop ' + esc(fmtNet(row.drop_usd)) + ' at 7%.</p>';
+var econ = '<p class="econ"><b class="num ' + vClass(vv) + '">' + esc(fmtNet(net)) + '</b> ' + esc(fmtNet(nph)) + '/h<br><span class="' + vClass(vv) + '">' + esc(vv) + '</span> ' + esc(fmtNet(row.fees_usd)) + ' gas · stop ' + (beShare * 100).toFixed(1) + '%</p>';
 function parseStep(s) {
 var ci = s.lastIndexOf(' Cost: '), ti = s.lastIndexOf(' Time: ');
 if (ci < 0 || ti < 0 || ti < ci) return null;
@@ -399,7 +400,7 @@ function tlc(w){if(w==='Weekly · exit')return '#a3e635';if(w.indexOf('Weekly')=
 var strip='<div class="tl" aria-hidden="true">'+(row.farm_steps||[]).map(function(st,i){var pp=parseStep(st);var w=pp?whenOf(pp.action,row.hold_days||30):'Day 0';return '<i style="background:'+tlc(w)+'">'+(i+1)+'</i>';}).join('')+'</div>';
 var n35=netAt(row,row.plan_size_usd||1000,0.035),v35=verdictAt(row,row.plan_size_usd||1000,0.035);
 var n14=netAt(row,row.plan_size_usd||1000,0.14),v14=verdictAt(row,row.plan_size_usd||1000,0.14);
-var stop='<p class="caveat">Stop rule: break-even is a '+(beShare*100).toFixed(1)+'% drop share — add nothing more below it. At 3.5% the plan nets '+fmtNet(n35)+' ('+v35+'); at 14% it nets '+fmtNet(n14)+' ('+v14+'). If a step fails, retry next week.</p>';
+var stop='<p class="caveat">Stop rule: add nothing more below '+(beShare*100).toFixed(1)+'%. At 3.5% the plan nets '+fmtNet(n35)+' ('+v35+'); at 14% it nets '+fmtNet(n14)+' ('+v14+'). If a step fails, retry next week.</p>';
 var comps = row.comparables || [];
 var compHtml = comps.length ? '<table class="mini comp"><thead><tr><th>Token that trades</th><th>TVL</th><th>MCAP</th><th>x TVL</th><th>Applied here</th></tr></thead><tbody>' +
 comps.map(function (p) { return '<tr><td>' + esc(p.name) + '</td><td class="num">' + esc(fmtUsd(p.tvl_usd)) + '</td><td class="num">' + esc(fmtUsd(p.mcap_usd)) + '</td><td class="num">' + esc(fmtMult(p.multiple)) + '</td><td class="num">' + esc(fmtUsd(p.applied_usd)) + '</td></tr>'; }).join('') + '</tbody></table>'
@@ -441,16 +442,16 @@ dialog.innerHTML =
 '<p class="sub">' + esc(row.category || 'Other') + ' on ' + esc(chainsOf(row)) + (isWatch(row) ? ' · on the watchlist' : (isAboveFloor(row) ? ' · above the floor' : ' · below the floor')) + '</p>' +
 '<p style="margin-top:8px"><span style="font-size:26px;color:var(--amber);font-family:var(--font-num);font-weight:600">' + esc(fmtUsd(row.implied_value_usd)) + '</span> <span class="sub">implied value · ' + esc(fmtUsd(row.value_low_usd)) + ' – ' + esc(fmtUsd(row.value_high_usd)) + ' range</span></p>' + mod + duo + '</div>' +
 '<button class="close" type="button" aria-label="Close details">Close</button></div>' +
-'<section class="detail-section"><h3>Farm plan</h3>' + planSum + strip + timeline + stop + stepsHtml +
-'<div class="arith"><div><span>At risk</span><b>' + esc(fmtUsd(dep)) + '</b></div><div><span>Fees</span><b>' + esc(fmtUsd(row.fees_usd)) + '</b></div><div><span>Your time</span><b>' + (row.time_hours !== undefined ? row.time_hours + ' h' : 'n/a') + '</b></div><div><span>Slice if it launches</span><b>' + esc(fmtNet(slice)) + '</b></div><div><span>Fees / slice</span><b>' + (be !== null ? Math.round(be * 100) + '%' : 'n/a') + '</b></div><div><span>Net per hour</span><b>' + (nph !== null ? esc(fmtNet(nph)) + '/h' : 'n/a') + '</b></div></div>' +
-'<p class="sub" style="margin-top:8px">Slice if launch = value if it launches x drop share x deposit / TVL. Break-even odds = fees / slice. Net per hour = net at the current selection / time.</p></section>' +
+'<section class="detail-section"><h3>Farm plan</h3>' + econ + planSum + strip + timeline + stop + stepsHtml +
+'<div class="arith"><div><span>At risk</span><b>' + esc(fmtUsd(dep)) + '</b></div><div><span>Fees</span><b>' + esc(fmtUsd(row.fees_usd)) + '</b></div><div><span>Your time</span><b>' + (row.time_hours !== undefined ? row.time_hours + ' h' : 'n/a') + '</b></div><div><span>Slice if it launches</span><b>' + esc(fmtNet(slice)) + '</b></div><div><span>Fees / slice</span><b>' + (be !== null ? Math.round(be * 100) + '%' : 'n/a') + '</b></div></div>' +
+'<p class="sub" style="margin-top:8px">Slice if launch = value if it launches x drop share x deposit / TVL. Break-even odds = fees / slice.</p></section>' +
 '<section class="detail-section"><h3>How the figure is made</h3><div class="chain">' + chainRows +
 '<div class="total"><span>Implied value</span><b class="num">' + esc(fmtUsd(row.implied_value_usd)) + '</b></div></div>' +
 '<p class="check ' + (ok ? 'ok' : 'bad') + '">Recomputed on this page: chainOf gives ' + esc(fmtUsd(re)) + (ok ? ' — the same number board.json carries.' : ' — WARNING: this differs from the board value ' + esc(fmtUsd(row.implied_value_usd)) + '; the data would be stale.') + '</p>' +
 '<p class="why">Why this rank: ' + whyRank(row) + '</p></section>' +
 '<section class="detail-section"><h3>Nearest traded comparables</h3>' + compHtml + '</section>' +
 '<section class="detail-section"><h3>Verdict table — net of fees</h3>' + vtHtml +
-'<p class="sub" style="margin-top:8px">Now: ' + esc(fmtUsd(dep)) + ' deposit, ' + Math.round(share * 1000) / 10 + '% drop share — net <b class="' + vClass(verdictSel(row)) + '">' + esc(fmtNet(net)) + ' · ' + esc(verdictSel(row)) + '</b>.</p></section>';
+'<p class="sub" style="margin-top:8px">Now: ' + esc(fmtUsd(dep)) + ' deposit, ' + Math.round(share * 1000) / 10 + '% drop share — net <b class="' + vClass(vv) + '">' + esc(fmtNet(net)) + ' · ' + esc(vv) + '</b>.</p></section>';
 on(dialog.querySelector('.close'),'click', function () { dialog.close(); });
 if (typeof dialog.showModal === 'function') { if (!dialog.open) dialog.showModal(); }
 else dialog.setAttribute('open', '');

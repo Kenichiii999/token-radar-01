@@ -162,6 +162,7 @@ td:first-child .sub{white-space:nowrap}
 .checklist{margin:0;padding-left:var(--s5);display:grid;gap:var(--s2);font-size:13px;color:var(--muted)}
 .checklist b{color:var(--ink)}
 .caveat{margin-top:var(--s3);font-size:13px;line-height:1.6;color:var(--muted);border-left:3px solid var(--amber);padding-left:var(--s3)}
+.econ{margin:2px 0 8px;font-size:15px;line-height:1.5}.econ .num{font-size:24px}
 .mini{width:100%;font-size:13px}
 .mini th,.mini td{padding:var(--s2) var(--s3)}
 .mini thead th{position:static}
