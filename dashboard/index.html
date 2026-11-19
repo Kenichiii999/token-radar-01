@@ -48,6 +48,8 @@
 <span class="count" id="count" aria-live="polite"></span>
 </div>
 <p class="checkstrip" id="checkStrip"></p>
+<div class="board-grid">
+<div class="board-col">
 <div class="panel">
 <div class="table-wrap">
 <table>
@@ -62,7 +64,8 @@
 </div>
 </div>
 </div>
-<div class="panels">
+</div>
+<aside class="side">
 <section class="panel pad" aria-label="Out-of-sample validation">
 <h2>Does it hold on tokens it never saw?</h2>
 <div id="valid"></div>
@@ -71,12 +74,10 @@
 <h2>How a row is priced</h2>
 <ol class="steps" id="pricing"></ol>
 </section>
-</div>
 <section class="panel pad">
 <h2>How to check this board — a note for the judge</h2>
 <ol class="checklist" id="checklist"></ol>
 </section>
-<div class="panels">
 <section class="panel pad" aria-label="Categories with the most rows">
 <h2>Categories with the most rows</h2>
 <div id="cats"></div>
@@ -86,14 +87,15 @@
 <p class="sub">Traded tokens (market cap) against pre-token rows (implied value), log scales. Dashed line: the fitted size curve.</p>
 <div id="scatter"></div>
 </section>
-</div>
-<section class="panel model" aria-label="How implied value is computed">
+<section class="panel pad model" aria-label="How implied value is computed">
 <h2>How implied value is computed</h2>
 <p class="sub">One function scores every row from the snapshot figures. No protocol name is special-cased and no row is hand-picked.</p>
 <p class="formula" id="formula"></p>
 <p class="sub" id="peerNote"></p>
 <p class="sub" id="liveNote"></p>
 </section>
+</aside>
+</div>
 <p class="foot">Implied value is a model estimate, not a price and not a promise of a token. A protocol listed here records no token in the snapshot; that is the record, not proof it has none.</p>
 </div>
 </main>

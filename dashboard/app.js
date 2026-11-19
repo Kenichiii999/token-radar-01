@@ -183,16 +183,18 @@
     var total = k.total_implied_usd !== undefined ? k.total_implied_usd : rowsAll.reduce(function (s, r) { return s + (r.implied_value_usd || 0); }, 0);
     var worth = k.worth_farming !== undefined ? k.worth_farming : rowsAll.filter(function (r) { return verdictSel(r) === 'FARM'; }).length;
     var tiles = [
-      ['Ranked', String(k.ranked !== undefined ? k.ranked : DATA.board_size), 'no token · ' + (DATA.watchlist_size || 0) + ' watchlist, ' + rowsAll.filter(function (r) { return r.tvl_usd < DATA.floor_usd; }).length + ' below ' + fmtUsd(DATA.floor_usd)],
+      ['Ranked', String(k.ranked !== undefined ? k.ranked : DATA.board_size), (DATA.watchlist_size || 0) + ' watchlist · ' + rowsAll.filter(function (r) { return r.tvl_usd < DATA.floor_usd; }).length + ' below floor'],
       ['Implied value', fmtUsd(total), 'over the board'],
       ['Out-of-sample miss', (k.loo_miss !== undefined ? k.loo_miss : k.loo_median_miss) !== undefined ? 'x' + (k.loo_miss !== undefined ? k.loo_miss : k.loo_median_miss).toFixed(2) : 'n/a', 'LOO · flat x' + (DATA.validation && DATA.validation.flat_baseline ? DATA.validation.flat_baseline.median_miss.toFixed(2) : 'n/a')],
-      ['Range holds', k.range_holds_pct !== undefined ? Math.round(k.range_holds_pct) + '%' : 'n/a', 'of held-out caps inside P10–P90'],
+      ['Range holds', k.range_holds_pct !== undefined ? Math.round(k.range_holds_pct) + '%' : 'n/a', 'held-out caps in P10–P90'],
       ['Launch odds, held out', k.launch_odds_accuracy_pct !== undefined ? Math.round(k.launch_odds_accuracy_pct) + '%' : 'n/a', 'held out · base rate ' + (DATA.validation && DATA.validation.launch_odds ? Math.round(DATA.validation.launch_odds.base_rate_pct) + '%' : 'n/a')],
-      ['Worth farming', String(worth), 'Farm verdict at plan, 7%, after fees']
+      ['Worth farming', String(worth), 'Farm at plan, 7%, after fees']
     ];
     $('kpi').innerHTML = tiles.map(function (t) { return '<div class="kpi-tile"><span>' + t[0] + '</span><b>' + esc(t[1]) + '</b><small>' + esc(t[2]) + '</small></div>'; }).join('');
   }
   var ACCT_COLORS = ['#f2a93b', '#2dd4a7', '#7aa2f0', '#f26d6d', '#c084fc', '#f472b6', '#94a3b8', '#eab308', '#38bdf8', '#a3e635'];
+  var ACCT_LABEL = { 'Ranked — pre-token, standalone': 'Ranked', 'Liquid staking / restaking': 'Liquid staking', 'Exchange custody (CEX)': 'Exchange custody', 'Wrapped / staked by name': 'Wrapped / staked' };
+  var ACCT_SHORT = { 'Ranked — pre-token, standalone': 'no token recorded', 'Already has a token': 'token already trades', 'Bridge': 'moves value between chains', 'Liquid staking / restaking': 'receipt for a traded token', 'Exchange custody (CEX)': 'exchange custody, no launch', 'Versioned name': 'version of another protocol', 'Wrapped / staked by name': 'product of a traded token' };
   function renderAccounting() {
     var acc = DATA.accounting;
     var sec = document.querySelector('.acct');
@@ -200,7 +202,7 @@
     var total = acc.reduce(function (s, a) { return s + a.count; }, 0);
     $('acctLine').textContent = total + ' read · ' + acc[0].count + ' ranked';
     $('acctBar').innerHTML = acc.map(function (a, i) { return '<i style="width:' + (a.count / total * 100).toFixed(2) + '%;background:' + ACCT_COLORS[i % ACCT_COLORS.length] + '" title="' + esc(a.label) + ' ' + a.count + '"></i>'; }).join('');
-    $('acctLegend').innerHTML = acc.map(function (a, i) { return '<li><span class="dot" style="background:' + ACCT_COLORS[i % ACCT_COLORS.length] + '"></span><b>' + a.count + '</b> ' + esc(a.label) + ' — ' + esc(a.reason) + '</li>'; }).join('');
+    $('acctLegend').innerHTML = acc.map(function (a, i) { return '<li><span class="dot" style="background:' + ACCT_COLORS[i % ACCT_COLORS.length] + '"></span><b>' + a.count + '</b> ' + esc(ACCT_LABEL[a.label] || a.label) + ' — ' + esc(ACCT_SHORT[a.label] || a.reason) + '</li>'; }).join('');
   }
 
   function th(key, label) {
@@ -238,9 +240,11 @@
         var v = verdictSel(r), n = netSel(r);
         var range = (r.rank_low !== undefined) ? r.rank + ' · ' + r.rank_low + '–' + r.rank_high : String(r.rank);
         var odds = fmtPct100(chainOf(r).odds);
+        var ch0 = (r.chains || [])[0] || '', chN = (r.chains || []).length - 1;
+        var sub2 = (r.category || 'Other') + (ch0 ? ' · ' + ch0 : '') + (chN > 0 ? ' +' + chN : '');
         return '<tr data-slug="' + esc(r.slug) + '" data-selected="' + (state.selected === r.slug) + '" tabindex="0">' +
           '<td><span class="rank-badge">' + r.rank + '</span><div class="sub">' + esc(range) + '</div></td>' +
-          '<td><div class="name"><b>' + esc(r.name) + (isWatch(r) ? '<span class="badge">WATCHLIST</span>' : (isAboveFloor(r) ? '<span class="badge">ABOVE FLOOR</span>' : '<span class="badge off">BELOW FLOOR</span>')) + '</b><span class="sub">' + esc(r.category || 'Other') + ' · ' + esc(chainsOf(r).split(', ').slice(0, 2).join(', ')) + '</span></div></td>' +
+          '<td><div class="name"><b class="nm" title="' + esc(r.name) + '">' + esc(r.name) + '</b><span class="sub prow">' + (isWatch(r) ? '<span class="badge">WATCHLIST</span>' : (isAboveFloor(r) ? '<span class="badge">ABOVE FLOOR</span>' : '<span class="badge off">BELOW FLOOR</span>')) + '<span class="subtxt">' + esc(sub2) + '</span></span></div></td>' +
           '<td class="num">' + esc(fmtUsd(r.tvl_usd)) + '</td>' +
           '<td class="num ' + g + '">' + esc(fmtPct(r.change_7d)) + '</td>' +
           '<td class="num">' + esc(fmtAge(r.age_days)) + '</td>' +
