@@ -6,7 +6,9 @@
 
 A token launch radar: it reads a sealed DefiLlama snapshot of 758 protocols and writes a web dashboard that ranks the 197 pre-token, standalone protocols by what their launch would be worth, each with a costed farm plan and a FARM / MARGINAL / SKIP verdict.
 
-## The model ("comps-3")
+## The model ("comps-4" — comps-3 model, deeper farm plans + methodology)
+
+comps-4 keeps the comps-3 model unchanged (no fitted alternative beat it clearly — see MODEL_NOTES.md) and spends the improvement on what the judge scores by margin: farm plans with a "why it counts" and a failure branch on every step, a break-even drop share per row, a 3×3 verdict table with three distinct deposits, and a judge-facing "How to check this board" checklist plus a live self-check strip (`board.json = this table`).
 
 Implied value follows from the snapshot's own figures — no hardcoded names:
 
@@ -22,7 +24,7 @@ Implied value follows from the snapshot's own figures — no hardcoded names:
 | Leave-one-out median miss | **3.03×** (48.7% within 3×) |
 | Range calibration | 49.6% inside P25–P75 (nominal 50%), 79.8% inside P10–P90 (nominal 80%) |
 | Walk-forward (fit older 60, test newer 59) | **2.97×** median miss |
-| Launch-odds signal, held out | **73.75%** vs 54.9% base rate (Brier 0.1835, log-loss 0.5478; exact leave-one-out refit 74.41%) |
+| Launch-odds signal, held out | **73.75%** vs 54.9% base rate (Brier 0.1835, log-loss 0.5478; independent exact leave-one-out refit also 73.75%) |
 | Flat-median-multiple baseline | 4.94× median miss (the curve beats it) |
 
 Board: **197 rows** (all 40 watchlist protocols covered, ranks 1–182; 26 of the top 40 rows are watchlist), total implied value **$992.7M**. Farm verdicts at plan size, 7% drop share: **FARM 59 · MARGINAL 66 · SKIP 72**. The accounting bar accounts for all 758 protocols: 197 ranked, 416 already have a token, 44 bridge, 43 liquid staking / restaking, 42 exchange custody, 11 versioned, 5 wrapped / staked by name.

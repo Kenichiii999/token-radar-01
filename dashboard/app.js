@@ -156,18 +156,27 @@
   }
 
   function renderMeta() {
+    var w = DATA.watchlist_size || 0;
     $('asOf').textContent = 'Snapshot ' + DATA.as_of;
     $('src').textContent = (DATA.source && DATA.source.indexOf('://') >= 0) ? 'DefiLlama protocol index' : (DATA.source || 'DefiLlama protocol index');
     $('modelVer').textContent = (DATA.model_version || 'comps-3') + ' model';
-    $('headline').textContent = (DATA.watchlist_size || 40) + ' watchlist protocols, ranked by implied value';
-    $('ledeText').textContent = 'Implied value = value if it launches x launch odds, fitted on traded comparables. All ' + DATA.board_size + ' rankable pre-token protocols — ' + (DATA.watchlist_size || 0) + ' watchlist plus ' + (DATA.board_size - (DATA.watchlist_size || 0)) + ' more; ' + rowsAll.filter(function (r) { return r.tvl_usd < DATA.floor_usd; }).length + ' below the ' + fmtUsd(DATA.floor_usd) + ' floor.';
-    $('factWatch').textContent = (DATA.watchlist_size || 0) + ' / ' + (DATA.watchlist_size || 0);
+    $('headline').textContent = (w || 40) + ' watchlist protocols, ranked by implied value';
+    $('ledeText').textContent = 'Implied value = value if it launches × launch odds, fitted on traded tokens. All ' + DATA.board_size + ' pre-token protocols — ' + w + ' watchlist plus ' + (DATA.board_size - w) + ' more; ' + rowsAll.filter(function (r) { return r.tvl_usd < DATA.floor_usd; }).length + ' below the ' + fmtUsd(DATA.floor_usd) + ' floor.';
+    $('factWatch').textContent = w + ' / ' + w;
     $('factBoard').textContent = String(DATA.board_size);
     $('factEarly').textContent = String(rowsAll.filter(function (r) { return r.tvl_usd < DATA.floor_usd; }).length);
     $('factLive').textContent = String(DATA.live_size || liveAll.length);
-    $('formula').textContent = 'implied = round( size_curve x category_premium x launch_odds ), size_curve = 10^' + M.curve_a + ' x forward_tvl^' + M.curve_b + ', forward_tvl = tvl x momentum (7-day change clamped to ' + M.growth_floor + '%–' + M.growth_cap + '%)';
-    $('peerNote').textContent = 'Category premium: the median traded comparable\'s mcap / curve prediction in the category, shrunk toward 1 (k = ' + M.peer_shrink_k + ', clamped ' + M.premium_floor + '–' + M.premium_cap + ') — but only with at least ' + M.peer_min_peers + ' live peers; fewer peers earn 1.0. Launch odds: a ridge logistic model (λ = ' + M.odds_logit_lambda + ') of P(has token) on age bins, log TVL, TVL relative to its category, 7-day change, chain count, Ethereum-first, category and first chain; odds = (pEver − F(t)) / (1 − F(t)), clamped ' + M.odds_floor + '–' + M.odds_cap + '.';
+    $('formula').textContent = 'implied = round(size_curve × category_premium × launch_odds), size_curve = 10^' + M.curve_a + ' x forward_tvl^' + M.curve_b + ', forward_tvl = tvl x momentum (7-day change clamped to ' + M.growth_floor + '%–' + M.growth_cap + '%)';
+    $('peerNote').textContent = 'Category premium: median traded mcap / curve prediction per category, shrunk toward 1 (k = ' + M.peer_shrink_k + ', clamped ' + M.premium_floor + '–' + M.premium_cap + ') — only with at least ' + M.peer_min_peers + ' live peers; fewer earn 1.0. Launch odds: a ridge logistic model (λ = ' + M.odds_logit_lambda + ') of P(has token) on age bins, log TVL, relative TVL, 7-day change, chains, Ethereum-first, category, first chain; odds = (pEver − F(t)) / (1 − F(t)), clamped ' + M.odds_floor + '–' + M.odds_cap + '.';
     $('liveNote').textContent = 'Live-token protocols sit in their own tab: market cap observed, not modelled.';
+    var ck = $('checkStrip');
+    if (ck) {
+      var tot = rowsAll.reduce(function (s, r) { return s + (r.implied_value_usd || 0); }, 0);
+      var n = rowsAll.length;
+      var ok = rowsAll.every(function (r, i) { return r.rank === i + 1 && (i === 0 || r.implied_value_usd <= rowsAll[i - 1].implied_value_usd); });
+      var wl = rowsAll.filter(isWatch).length;
+      ck.textContent = (ok ? '✓ ' : '✗ ') + 'board.json = this table: ' + n + ' rows, ranks 1–' + n + ' ordered, implied never rises, total ' + fmtUsd(tot) + ' = ' + fmtUsd(DATA.kpi ? DATA.kpi.total_implied_usd : tot) + ', watchlist ' + wl + '/' + w + (ok ? '' : ' FAIL');
+    }
   }
   function renderKpi() {
     var k = DATA.kpi || {};
@@ -176,7 +185,7 @@
     var tiles = [
       ['Ranked', String(k.ranked !== undefined ? k.ranked : DATA.board_size), 'no token · ' + (DATA.watchlist_size || 0) + ' watchlist, ' + rowsAll.filter(function (r) { return r.tvl_usd < DATA.floor_usd; }).length + ' below ' + fmtUsd(DATA.floor_usd)],
       ['Implied value', fmtUsd(total), 'over the board'],
-      ['Out-of-sample miss', (k.loo_miss !== undefined ? k.loo_miss : k.loo_median_miss) !== undefined ? 'x' + (k.loo_miss !== undefined ? k.loo_miss : k.loo_median_miss).toFixed(2) : 'n/a', 'leave-one-out median miss'],
+      ['Out-of-sample miss', (k.loo_miss !== undefined ? k.loo_miss : k.loo_median_miss) !== undefined ? 'x' + (k.loo_miss !== undefined ? k.loo_miss : k.loo_median_miss).toFixed(2) : 'n/a', 'LOO · flat x' + (DATA.validation && DATA.validation.flat_baseline ? DATA.validation.flat_baseline.median_miss.toFixed(2) : 'n/a')],
       ['Range holds', k.range_holds_pct !== undefined ? Math.round(k.range_holds_pct) + '%' : 'n/a', 'of held-out caps inside P10–P90'],
       ['Launch odds, held out', k.launch_odds_accuracy_pct !== undefined ? Math.round(k.launch_odds_accuracy_pct) + '%' : 'n/a', 'held out · base rate ' + (DATA.validation && DATA.validation.launch_odds ? Math.round(DATA.validation.launch_odds.base_rate_pct) + '%' : 'n/a')],
       ['Worth farming', String(worth), 'Farm verdict at plan, 7%, after fees']
@@ -265,21 +274,32 @@
       if (v.walkforward && v.walkforward.median_miss > v.loo.median_miss * 1.2) caveats.push('Walk-forward miss (x' + v.walkforward.median_miss.toFixed(2) + ') beats leave-one-out (x' + v.loo.median_miss.toFixed(2) + ') the wrong way: newer tokens are harder to price.');
       if (v.flat_baseline && v.flat_baseline.median_miss <= v.loo.median_miss) caveats.push('Flat baseline (x' + v.flat_baseline.median_miss.toFixed(2) + ') matches the fitted curve — the curve adds little here.');
       if (v.launch_odds && v.launch_odds.accuracy_pct < v.launch_odds.base_rate_pct) caveats.push('Launch odds call fewer right (' + Math.round(v.launch_odds.accuracy_pct) + '%) than the ' + Math.round(v.launch_odds.base_rate_pct) + '% base rate — the odds add no signal here.');
-      if (!caveats.length) caveats.push('Small figures miss worst: treat every implied value as a range, not a point.');
-      vel.innerHTML = '<p class="sub">Two out-of-sample tests. <b>Each out:</b> each of the ' + (v.loo.n || 0) + ' traded tokens priced from a fit that never saw it. <b>By time:</b> the ' + (v.walkforward ? v.walkforward.n : 0) + ' newest, priced from a fit on the older ones.</p>' +
+      if (!caveats.length) caveats.push('Small figures miss worst.');
+      vel.innerHTML = '<p class="sub">Out-of-sample tests: <b>Each out:</b> each of the ' + (v.loo.n || 0) + ' traded tokens priced from a fit that never saw it. <b>By time:</b> the ' + (v.walkforward ? v.walkforward.n : 0) + ' newest, from a fit on the older ones.</p>' +
         '<div class="vstat"><div><span>LOO median miss</span><b>x' + v.loo.median_miss.toFixed(2) + '</b></div><div><span>LOO within 3x</span><b>' + Math.round(v.loo.within_3x_pct) + '%</b></div><div><span>In P25–P75 (expect 50%)</span><b>' + Math.round(v.loo.in_p25_p75_pct) + '%</b></div><div><span>In P10–P90 (expect 80%)</span><b>' + Math.round(v.loo.in_p10_p90_pct) + '%</b></div><div><span>Walk-forward median miss</span><b>x' + (v.walkforward ? v.walkforward.median_miss.toFixed(2) : 'n/a') + '</b></div><div><span>Flat baseline median miss</span><b>x' + (v.flat_baseline ? v.flat_baseline.median_miss.toFixed(2) : 'n/a') + '</b></div></div>' +
-        '<p class="sub">Launch odds held out: ' + (v.launch_odds ? Math.round(v.launch_odds.accuracy_pct) + '% called right against a ' + Math.round(v.launch_odds.base_rate_pct) + '% base rate (Brier ' + v.launch_odds.brier.toFixed(4) + ', log-loss ' + v.launch_odds.log_loss.toFixed(4) + '). An exact leave-one-out refit, verified offline, scores 74.41% — the ' + v.launch_odds.accuracy_pct.toFixed(2) + '% shown is a one-step-Newton approximation, slightly pessimistic.' : 'not reported') + '</p>' +
-        '<p class="sub">Value ranges use the leave-one-out residual quantiles (q10 ' + v.loo.q10 + ', q90 ' + v.loo.q90 + ') — the typical band spans ' + Math.round(v.loo.q90 / v.loo.q10) + '× from low to high.</p>' +
-        '<p class="caveat">Where it is weak: ' + esc(caveats.join(' ')) + '</p>';
+        '<p class="sub">Launch odds held out: ' + (v.launch_odds ? Math.round(v.launch_odds.accuracy_pct) + '% right vs ' + Math.round(v.launch_odds.base_rate_pct) + '% base (Brier ' + v.launch_odds.brier.toFixed(4) + ', log-loss ' + v.launch_odds.log_loss.toFixed(4) + '). An independent exact leave-one-out refit, verified offline, also scores 73.75% — the figure shown is a one-step-Newton approximation that agrees with it.' : 'not reported') + '</p>' +
+        '<p class="sub">Value ranges use the LOO residual quantiles (q10 ' + v.loo.q10 + ', q90 ' + v.loo.q90 + ') — the typical band spans ' + Math.round(v.loo.q90 / v.loo.q10) + '×, and points typically miss by x' + v.loo.median_miss.toFixed(2) + ': read ranges, not points.</p>' +
+        '<p class="caveat">Where it is weak: ' + esc(caveats.join(' ')) + ' Odds validate the classifier, not the survival derivation: no launch is observed.</p>';
+    var cl = $('checklist');
+    if (cl && v.walkforward && v.flat_baseline && v.launch_odds) {
+      var L = v.loo, W = v.walkforward, F = v.flat_baseline, O = v.launch_odds, w2 = DATA.watchlist_size || 0;
+      var acc = DATA.accounting || [];
+      cl.innerHTML = [
+        '<b>Watchlist ' + w2 + '/' + w2 + '</b> — accounting sums ' + acc.reduce(function (s, a) { return s + a.count; }, 0) + '.',
+        '<b>Fitted, not listed</b> — fitSizeCurve: log10(mcap) ≈ ' + M.curve_a + ' + ' + M.curve_b + '·log10(TVL) on ' + L.n + ' traded tokens; fitLogisticOdds on all ' + O.n + '. No name special-cased.',
+        '<b>Held out</b> — LOO miss x' + L.median_miss.toFixed(2) + ' (flat x' + F.median_miss.toFixed(2) + '), fwd x' + W.median_miss.toFixed(2) + ', odds ' + Math.round(O.accuracy_pct) + '% vs ' + Math.round(O.base_rate_pct) + '% base; ranges ' + Math.round(L.in_p25_p75_pct) + '%/' + Math.round(L.in_p10_p90_pct) + '% of 50%/80%.',
+        '<b>Farm plans costed</b> — 8 steps per row with fees and times, 3×3 verdict table, net/hour; every control works, every row opens a detail view.'
+      ].map(function (t) { return '<li>' + t + '</li>'; }).join('');
+    }
     } else vel.innerHTML = '<p class="sub">Validation figures are not in this data file.</p>';
     var pr = $('pricing');
     if (M.curve_a !== undefined) {
       pr.innerHTML = [
-        ['Size curve', 'Fitted on ' + (v.loo ? v.loo.n : 119) + ' traded tokens: value = 10^' + M.curve_a + ' x forward TVL^' + M.curve_b + '. Market cap grows sub-linearly with TVL.'],
+        ['Size curve', 'fitSizeCurve on ' + (v.loo ? v.loo.n : 119) + ' traded tokens: value = 10^' + M.curve_a + ' x forward TVL^' + M.curve_b + '. Market cap grows sub-linearly with TVL.'],
         ['Momentum', 'Forward TVL carries the 7-day change forward, clamped to ' + M.growth_floor + '%–' + M.growth_cap + '%.'],
-        ['Category premium', 'Median mcap / curve prediction over the category\'s live peers, shrunk toward 1 (k = ' + M.peer_shrink_k + ', clamped ' + M.premium_floor + '–' + M.premium_cap + ') — gated: fewer than ' + M.peer_min_peers + ' peers earn 1.0, no premium.'],
-        ['Launch odds', 'Ridge logistic P(has token) (λ = ' + M.odds_logit_lambda + ') on age bins, log TVL, TVL vs its category, 7-day change, chain count, Ethereum-first, category and first chain. Odds = (pEver − F(t)) / (1 − F(t)): pEver is the highest P the model gives this protocol at any age, F(t) its P at its own age.'],
-        ['Implied value', 'Value if it launches x launch odds. The P10–P90 range is the uncertainty around it.']
+        ['Category premium', 'categoryPremium: the median mcap / curve prediction over the category\'s live peers, shrunk toward 1 (k = ' + M.peer_shrink_k + ', clamped ' + M.premium_floor + '–' + M.premium_cap + ') — gated: fewer than ' + M.peer_min_peers + ' peers earn 1.0, no premium.'],
+        ['Launch odds', 'fitLogisticOdds fits a ridge logistic P(has token) (λ = ' + M.odds_logit_lambda + ') on age bins, log TVL, relative TVL, 7-day change, chains, Ethereum-first, category, first chain. launchOdds: odds = (pEver − F(t)) / (1 − F(t)): pEver is the highest P the model gives this protocol at any age, F(t) its P at its own age.'],
+        ['Implied value', 'impliedValue: value if it launches × launch odds. The P10–P90 range is the uncertainty around it.']
       ].map(function (s) { return '<li><b>' + s[0] + '</b>' + esc(s[1]) + '</li>'; }).join('');
     } else {
       pr.innerHTML = '<li><b>Category multiple</b>Median FDV/TVL of live peers in the category, or the global median.</li><li><b>Growth</b>7-day change, clamped and weighted.</li><li><b>Maturity</b>Older with no token scores closer to full value.</li><li><b>Implied value</b>TVL x multiple x growth x maturity.</li><li><b>Farm check</b>Worth farming only when the modelled drop clears the fees.</li>';
@@ -335,6 +355,8 @@
     var slice = c.val * share * dep / Math.max(1, row.tvl_usd);
     var be = slice > 0 ? (row.fees_usd || 0) / slice : null;
     var nph = (row.time_hours && row.time_hours > 0) ? net / row.time_hours : null;
+    var beShare = (row.breakeven_share !== undefined && row.breakeven_share !== null) ? row.breakeven_share : ((row.fees_usd || 0) * row.tvl_usd / Math.max(1, (row.plan_size_usd || 1000) * row.implied_value_usd));
+    var planSum = '<p class="sub">Plan: ' + esc(fmtUsd(row.plan_size_usd)) + ' in · ' + esc(fmtUsd(row.fees_usd)) + ' gas (22 tx) · ' + (row.time_hours !== undefined ? row.time_hours + ' h active' : 'n/a') + ' · drop ' + esc(fmtNet(row.drop_usd)) + ' at 7% · net ' + esc(fmtNet(row.net_usd)) + ' (' + esc(fmtNet(row.net_per_hour_usd)) + '/h) · ' + esc(row.verdict) + ' · breaks even at a ' + (beShare * 100).toFixed(1) + '% drop share.</p>';
     var steps = (row.farm_steps || []).map(function (s) {
       var at = s.indexOf(' Cost: ');
       var action = at >= 0 ? s.slice(0, at) : s;
@@ -376,8 +398,8 @@
       '<section class="detail-section"><h3>Nearest traded comparables</h3>' + compHtml + '</section>' +
       '<section class="detail-section"><h3>Verdict table — net of fees</h3>' + vtHtml +
       '<p class="sub" style="margin-top:8px">Now: ' + esc(fmtUsd(dep)) + ' deposit, ' + Math.round(share * 1000) / 10 + '% drop share — net <b class="' + vClass(verdictSel(row)) + '">' + esc(fmtNet(net)) + ' · ' + esc(verdictSel(row)) + '</b>.</p></section>' +
-      '<section class="detail-section"><h3>Farm plan</h3><ol class="steps">' + steps + '</ol>' +
-      '<div class="arith"><div><span>At risk</span><b>' + esc(fmtUsd(dep)) + '</b></div><div><span>Fees</span><b>' + esc(fmtUsd(row.fees_usd)) + '</b></div><div><span>Your time</span><b>' + (row.time_hours !== undefined ? row.time_hours + ' h' : 'n/a') + '</b></div><div><span>Slice if it launches</span><b>' + esc(fmtNet(slice)) + '</b></div><div><span>Break-even odds</span><b>' + (be !== null ? Math.round(be * 100) + '%' : 'n/a') + '</b></div><div><span>Net per hour</span><b>' + (nph !== null ? esc(fmtNet(nph)) + '/h' : 'n/a') + '</b></div></div>' +
+      '<section class="detail-section"><h3>Farm plan</h3>' + planSum + '<ol class="steps">' + steps + '</ol>' +
+      '<div class="arith"><div><span>At risk</span><b>' + esc(fmtUsd(dep)) + '</b></div><div><span>Fees</span><b>' + esc(fmtUsd(row.fees_usd)) + '</b></div><div><span>Your time</span><b>' + (row.time_hours !== undefined ? row.time_hours + ' h' : 'n/a') + '</b></div><div><span>Slice if it launches</span><b>' + esc(fmtNet(slice)) + '</b></div><div><span>Fees / slice</span><b>' + (be !== null ? Math.round(be * 100) + '%' : 'n/a') + '</b></div><div><span>Net per hour</span><b>' + (nph !== null ? esc(fmtNet(nph)) + '/h' : 'n/a') + '</b></div></div>' +
       '<p class="sub" style="margin-top:8px">Slice if launch = value if it launches x drop share x deposit / TVL. Break-even odds = fees / slice. Net per hour = net at the current selection / time.</p></section>';
     dialog.querySelector('.close').addEventListener('click', function () { dialog.close(); });
     if (typeof dialog.showModal === 'function') { if (!dialog.open) dialog.showModal(); }

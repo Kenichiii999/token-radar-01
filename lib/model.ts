@@ -55,8 +55,14 @@
 //   drop_usd = plan_size_usd x 0.07 x (implied_value_usd / tvl_usd) (plan size, 7% drop share).
 //   net_usd = drop_usd - fees_usd; net_per_hour_usd = net_usd / time_hours.
 //   verdict: FARM if net_usd >= $10, MARGINAL if net_usd > $0, else SKIP.
-//   verdict_table: deposits [$1,000, plan_size, $10,000] x drop shares [3.5%, 7%, 14%] -> net +
-//     verdict per cell (9 cells), same fee and drop-share arithmetic.
+//   breakeven_share = fees_usd x tvl_usd / (plan_size_usd x implied_value_usd): the drop
+//     share at which net is exactly $0 at the plan size (above 1 means the plan can never
+//     break even, even if the whole implied value dropped). hold_days is the hold window
+//     from the protocol's age (<180d -> 60d, <365d -> 45d, else 30d).
+//   verdict_table: deposits [$1,000, $3,100, $10,000] (fixed tiers, so all three columns
+//     differ on every row; the column equal to plan_size_usd is the plan column) x drop
+//     shares [3.5%, 7%, 14%] -> net + verdict per cell (9 cells), same fee and drop-share
+//     arithmetic as the plan-size verdict.
 //
 // Comparables: the 3 nearest traded tokens, same category preferred, then closest by
 //   |log10(protocol TVL / peer TVL)|; applied_usd = peer mcap x (protocol TVL / peer TVL).
@@ -64,7 +70,14 @@
 // Farm steps keep v2's 8-step structure (fresh wallet; category main action + chain gas note;
 //   second category action; weekly cadence over 12 weeks; hold period by age; points-page check;
 //   safety step; farm log) with capital set to the plan_size_usd tier and the 12-week horizon
-//   named in the steps.
+//   named in the steps. Each step now also says WHY it counts toward a drop (the on-chain
+//   footprint it leaves — a vault-share balance, an LP position, a borrow — that a snapshot
+//   can read) and what to do when it fails (a capped vault, a paused market, a gas spike,
+//   a 0-points page), with the concrete per-transaction gas cost on the protocol's own first
+//   chain ($0.10 on L2s, $2.00 on Ethereum) and the step's time, so a reader can follow the
+//   plan without guessing. Steps run to ~600 characters; every step is derived from the
+//   protocol's own record (category, chains, TVL tier, age, plan size) through categoryPlay,
+//   never from a hand-written list of names.
 //
 // No protocol name is ever special-cased: the same functions score every row, and every number
 // comes from the snapshot itself.
@@ -153,7 +166,7 @@ export const MODEL: ModelConstants = {
 };
 
 /** The model's version label: the dashboard names it and the rules quote it. */
-export const MODEL_VERSION = 'comps-3';
+export const MODEL_VERSION = 'comps-4';
 
 /** How many live-token protocols the Live token view carries, by market cap. */
 export const LIVE_ROWS = 24;
@@ -215,6 +228,8 @@ export interface BoardRow {
   drop_usd: number;
   net_usd: number;
   net_per_hour_usd: number;
+  breakeven_share: number;
+  hold_days: number;
   verdict: string;
   verdict_table: VerdictTable;
   comparables: Comparable[];
@@ -859,9 +874,19 @@ export function verdictFor(netUsd: number): string {
   return 'SKIP';
 }
 
-/** The 3 x 3 verdict grid: deposits [$1,000, plan size, $10,000] x shares [3.5%, 7%, 14%]. */
+/** The break-even drop share at one deposit: the share at which the modelled drop exactly covers the fees, so net is $0. Above 1 the plan can never break even. */
+export function breakevenShareFor(planSize: number, fees: number, implied: number, tvl: number): number {
+  if (planSize <= 0 || implied <= 0 || tvl <= 0) return 0;
+  return round4((fees * tvl) / (planSize * implied));
+}
+
+/** The 3 x 3 verdict grid: fixed deposits [$1,000, $3,100, $10,000] x shares [3.5%, 7%, 14%].
+ * Fixed tiers, not [$1,000, plan size, $10,000]: the old middle column duplicated the first
+ * on $1,000 plans and the last on $10,000 plans, so a reader saw a copied column. Every row
+ * now shows three distinct deposits; the column equal to the row's plan size is its plan column. */
 export function verdictTableFor(planSize: number, fees: number, implied: number, tvl: number, model: ModelConstants = MODEL): VerdictTable {
-  const deposits = [1_000, planSize, 10_000];
+  void planSize;
+  const deposits = [1_000, 3_100, 10_000];
   const shares = [0.035, model.drop_share, 0.14];
   const nets: number[][] = [];
   const verdicts: string[][] = [];
@@ -900,10 +925,171 @@ function holdDaysFor(age: number | null): number {
   return 30;
 }
 
+/** The gas for one transaction on the protocol's main chain: $2.00 on Ethereum, $0.10 elsewhere. */
+export function gasPerTxUsd(p: SnapshotProtocol, model: ModelConstants = MODEL): number {
+  const chain = p.chains.length > 0 ? p.chains[0]! : '';
+  return chain === 'Ethereum' ? model.fee_gas_eth_usd : model.fee_gas_l2_usd;
+}
+
 /** The gas note for the protocol's main chain: Ethereum mainnet costs more than the L2s. */
-function gasNote(chain: string): string {
-  if (chain === 'Ethereum') return 'Gas on Ethereum mainnet runs about $2 per transaction, so do this once and batch the next step with it.';
-  return `Network fees on ${chain} are about $0.10 per transaction, so repeating this weekly stays cheap.`;
+function gasNote(chain: string, gas: number): string {
+  if (chain === 'Ethereum') return `Gas on Ethereum mainnet runs about $${gas.toFixed(2)} per transaction, so do this once — every repeat costs another $${gas.toFixed(2)}.`;
+  return `Network fees on ${chain} are about $${gas.toFixed(2)} per transaction, so repeating this weekly stays cheap.`;
+}
+
+/** One category's whole play: its main action, a second action, the weekly repeat, the
+ * on-chain footprint each leaves (what a snapshot can actually read), and what to do when
+ * the main action fails. Every field is derived from the protocol's own record — category,
+ * name, first chain, plan size — never from a hand-written list of names. */
+export interface CategoryPlay {
+  main: string;
+  second: string;
+  weekly: string;
+  footprint: string;
+  fail: string;
+}
+
+function categoryPlay(p: SnapshotProtocol, capital: number, chain: string): CategoryPlay {
+  const c = categoryOf(p);
+  const name = p.name;
+  const cap = fmtUsd(capital);
+  if (c.includes('lend') || c.includes('cdp') || c.includes('collateral')) return {
+    main: `Supply $${cap} of USDC to ${name} on ${chain} and keep the supply position open.`,
+    second: `Borrow about $20 of USDC against the supplied collateral, then repay it within a week so the loan stays healthy.`,
+    weekly: `repay $10 of the loan and borrow $10 again`,
+    footprint: `a supply position plus a borrow — two ledger entries under one address that only real collateral creates`,
+    fail: `if borrowing is disabled the market may be paused: leave the supply open and retry next week; keep the loan small enough that the health factor stays above 1.5`,
+  };
+  if (c.includes('index')) return {
+    main: `Buy $${cap} of ${name} index tokens on ${chain} and hold them.`,
+    second: `Buy a second tranche of about $25 of ${name} index tokens, and rebalance the holding once a month.`,
+    weekly: `buy about $10 more of index tokens`,
+    footprint: `an index-token balance held across snapshots — a holder's position, not a one-off swap`,
+    fail: `if the index price moves more than 5% while you buy, split the buy into two halves a day apart instead of chasing the price`,
+  };
+  if (c.includes('dex')) return {
+    main: `Provide $${cap} of liquidity to ${name}'s main pool on ${chain} and keep the position open.`,
+    second: `Swap about $10 of tokens through ${name}'s main pool each week so the wallet shows repeat trading activity.`,
+    weekly: `swap about $10 through the main pool`,
+    footprint: `an LP position plus repeat swaps — liquidity provided and volume, the two things a DEX snapshot reads`,
+    fail: `if slippage tops 1%, halve the swap and retry later; if the pool is paused, leave the LP position and retry next week`,
+  };
+  if (c.includes('yield')) return {
+    main: `Deposit $${cap} into ${name}'s main yield vault on ${chain} and keep the vault shares.`,
+    second: `Harvest the vault's rewards each week and compound them back into the same ${name} vault instead of selling them.`,
+    weekly: `harvest the rewards and compound them back into the vault`,
+    footprint: `vault shares that grow as rewards compound — a compounding position, not a parked deposit`,
+    fail: `if the vault is capped, deposit what fits and put the rest in a second vault; if a harvest costs more gas than the rewards, skip that week's harvest`,
+  };
+  if (c.includes('bridge') || c.includes('cross chain')) return {
+    main: `Bridge $${cap} of USDC into ${chain} through ${name} and use the bridged funds in its app.`,
+    second: `Bridge a small amount, about $10, back through ${name} so the wallet shows two-way bridge activity.`,
+    weekly: `bridge about $10 each way`,
+    footprint: `bridge transactions in both directions — a user of the bridge, not a one-way transfer`,
+    fail: `if the bridge quotes a fee above $5, wait for a cheaper window; if a transfer stalls, check the bridge's own status page before resending`,
+  };
+  if (c.includes('stak') || c.includes('restak')) return {
+    main: `Stake $${cap} of the chain's staking asset through ${name} on ${chain} and keep the receipt token.`,
+    second: `Add a second small stake of about $25 through ${name} and hold the new receipt token alongside the first.`,
+    weekly: `add about $10 to the stake`,
+    footprint: `a receipt-token balance that only a real stake mints`,
+    fail: `if the stake is capped, stake what fits and queue the rest for next week; if unstaking has a waiting period, do not start it until week 12`,
+  };
+  if (c.includes('perpetual') || c.includes('derivative')) return {
+    main: `Deposit $${cap} of USDC as margin on ${name} and open one small hedged position.`,
+    second: `Close the first hedged position and open a fresh small one, keeping total margin near $${cap}.`,
+    weekly: `close the hedged position and open a fresh small one`,
+    footprint: `margin posted plus a filled position — a trader's footprint, not an empty deposit`,
+    fail: `if funding flips against the hedge, close it and reopen at the same size; if the position nears liquidation, cut it before adding margin`,
+  };
+  if (c.includes('prediction')) return {
+    main: `Fund $${cap} and place one position on a ${name} market on ${chain}.`,
+    second: `Place a second small position, about $10, on a different ${name} market once a week.`,
+    weekly: `place a $10 position on a new market`,
+    footprint: `settled positions on more than one market — a repeat participant, not a single bet`,
+    fail: `if a market's odds move sharply before you place, skip it and pick another market; never chase a market that already resolved`,
+  };
+  if (c.includes('curator') || c.includes('allocator')) return {
+    main: `Deposit $${cap} into a ${name} vault on ${chain} and keep the vault shares.`,
+    second: `Top up the ${name} vault with about $25 more, or deposit the same amount into a second vault it curates.`,
+    weekly: `top up the vault by $25`,
+    footprint: `vault shares in a curated vault — a depositor balance the curator can attribute to one wallet`,
+    fail: `if the vault is capped, split the deposit across two vaults it curates instead of forcing one large deposit; never use an unofficial vault to get around a cap`,
+  };
+  if (c.includes('stable')) return {
+    main: `Mint or deposit $${cap} of the stable asset through ${name} on ${chain} and hold it.`,
+    second: `Deposit the minted stable asset into ${name}'s savings vault on ${chain} so it earns while it sits.`,
+    weekly: `add about $10 of the stable asset to the savings vault`,
+    footprint: `a minted stable balance plus a savings position — issuance and holding, not a passing swap`,
+    fail: `if the mint reverts, check the collateral ratio first and mint a smaller amount; if the peg slips below $0.99, hold and check the docs before minting more`,
+  };
+  if (c.includes('rwa')) return {
+    main: `Mint $${cap} of ${name}'s yield-bearing asset on ${chain} and hold it.`,
+    second: `Buy a second small tranche, about $25, of the yield-bearing asset and hold it with the first.`,
+    weekly: `buy about $10 more of the yield-bearing asset`,
+    footprint: `a yield-bearing asset balance held across snapshots`,
+    fail: `if minting is gated to verified wallets, complete the check on the official site only; if the asset is capped, buy what fits and queue the rest`,
+  };
+  if (c.includes('insurance')) return {
+    main: `Buy $${cap} of cover from ${name} on ${chain} and keep the policy active.`,
+    second: `Buy a second small cover, about $25, for another position so the wallet holds two active policies.`,
+    weekly: `check the cover and add $10 of cover for a new position`,
+    footprint: `two active policies under one wallet — a real cover buyer, not a quote request`,
+    fail: `if a cover quote jumps, buy a smaller cover rather than the full amount; if cover only opens per epoch, wait for the next epoch`,
+  };
+  if (c.includes('basis')) return {
+    main: `Deposit $${cap} into ${name}'s basis position on ${chain} and keep it open.`,
+    second: `Roll the basis position once a month, closing the old leg and opening a fresh one at the same size.`,
+    weekly: `check the basis position and roll it if the month turns`,
+    footprint: `an open basis position rolled monthly — a position that lives across snapshots`,
+    fail: `if the basis spread turns negative, close the leg and wait for the spread to recover before reopening`,
+  };
+  if (c.includes('liquidity')) return {
+    main: `Provide $${cap} of liquidity through ${name} on ${chain} and keep the position open.`,
+    second: `Add about $25 more liquidity and rebalance the range once a month.`,
+    weekly: `rebalance the liquidity range by $10`,
+    footprint: `a managed liquidity position with rebalances — an active LP, not a deposit-and-forget`,
+    fail: `if the range goes out of range, rebalance instead of withdrawing; if gas spikes, rebalance next week`,
+  };
+  if (c.includes('farm') || c.includes('leverag')) return {
+    main: `Deposit $${cap} into ${name}'s farm on ${chain} and keep the position staked.`,
+    second: `Harvest the farm rewards weekly and restake them into the same farm.`,
+    weekly: `harvest the rewards and restake them`,
+    footprint: `a staked farm position with weekly harvests — the farm's own ledger entries`,
+    fail: `if the farm's rewards run dry, keep the stake and harvest what is left; if the farm pauses, wait — do not move funds to an unofficial farm`,
+  };
+  return {
+    main: `Deposit $${cap} of USDC into ${name} on ${chain} and keep the position open.`,
+    second: `Make a second small deposit of about $25 into ${name} on ${chain} so the wallet shows repeat activity.`,
+    weekly: `add about $10 to the position`,
+    footprint: `a funded position with repeat deposits — an active user balance, not a single transfer`,
+    fail: `if the deposit reverts, check the contract address against the official docs and retry a smaller amount; if the app is down, wait a day rather than using a mirror site`,
+  };
+}
+
+/** The category's main action, in the words a farmer can follow. */
+function actionFor(p: SnapshotProtocol, capital: number, chain: string): string {
+  return categoryPlay(p, capital, chain).main;
+}
+
+/** A second, different action in the same category, so the wallet shows more than one behaviour. */
+function secondActionFor(p: SnapshotProtocol, capital: number, chain: string): string {
+  return categoryPlay(p, capital, chain).second;
+}
+
+/** The weekly repeat action for the category, over the 12-week plan. */
+function weeklyActionFor(p: SnapshotProtocol, chain: string): string {
+  return categoryPlay(p, 0, chain).weekly;
+}
+
+/** What the category's main action leaves on-chain that a snapshot can read. */
+function footprintFor(p: SnapshotProtocol, chain: string): string {
+  return categoryPlay(p, 0, chain).footprint;
+}
+
+/** What to do when the category's main action fails. */
+function failFor(p: SnapshotProtocol, chain: string): string {
+  return categoryPlay(p, 0, chain).fail;
 }
 
 /** The category's lower-cased name, for matching. */
@@ -916,48 +1102,6 @@ function fmtUsd(n: number): string {
   return n.toLocaleString('en-US');
 }
 
-/** The category's main action, in the words a farmer can follow. */
-function actionFor(p: SnapshotProtocol, capital: number, chain: string): string {
-  const c = categoryOf(p);
-  const name = p.name;
-  const cap = fmtUsd(capital);
-  if (c.includes('lend') || c.includes('cdp') || c.includes('collateral')) return `Supply $${cap} of USDC to ${name} on ${chain} and keep the position open.`;
-  if (c.includes('index')) return `Buy $${cap} of ${name}'s index tokens on ${chain} and hold them.`;
-  if (c.includes('dex')) return `Provide $${cap} of liquidity to ${name}'s main pool on ${chain} and keep the position open.`;
-  if (c.includes('yield')) return `Deposit $${cap} into ${name}'s main yield vault on ${chain} and keep the vault shares.`;
-  if (c.includes('bridge') || c.includes('cross chain')) return `Bridge $${cap} of USDC into ${chain} through ${name} and use the bridged funds in its app.`;
-  if (c.includes('stak') || c.includes('restak')) return `Stake $${cap} of the chain's staking asset through ${name} on ${chain} and keep the receipt token.`;
-  if (c.includes('perpetual') || c.includes('derivative')) return `Deposit $${cap} of USDC as margin on ${name} and open one small hedged position.`;
-  if (c.includes('prediction')) return `Fund $${cap} and place one position on a ${name} market on ${chain}.`;
-  if (c.includes('curator') || c.includes('allocator')) return `Deposit $${cap} into a ${name} vault on ${chain} and keep the vault shares.`;
-  if (c.includes('stable')) return `Mint or deposit $${cap} of the stable asset through ${name} on ${chain} and hold it.`;
-  if (c.includes('rwa')) return `Mint $${cap} of ${name}'s yield-bearing asset on ${chain} and hold it.`;
-  if (c.includes('insurance')) return `Buy $${cap} of cover from ${name} on ${chain} and keep the policy active.`;
-  if (c.includes('basis')) return `Deposit $${cap} into ${name}'s basis position on ${chain} and keep it open.`;
-  return `Deposit $${cap} of USDC into ${name} on ${chain} and keep the position open.`;
-}
-
-/** A second, different action in the same category, so the wallet shows more than one behaviour. */
-function secondActionFor(p: SnapshotProtocol, capital: number, chain: string): string {
-  const c = categoryOf(p);
-  const name = p.name;
-  const cap = fmtUsd(capital);
-  if (c.includes('lend') || c.includes('cdp') || c.includes('collateral')) return `Borrow a small amount, about $20 of USDC, against the supplied collateral on ${name}, then repay it within a week so the loan stays healthy.`;
-  if (c.includes('index')) return `Buy a second small tranche, about $25 of ${name} index tokens, and rebalance the holding once a month.`;
-  if (c.includes('dex')) return `Swap about $10 of tokens through ${name}'s main pool each week so the wallet shows repeat trading activity.`;
-  if (c.includes('yield')) return `Harvest the vault's rewards each week and compound them back into the same ${name} vault instead of selling them.`;
-  if (c.includes('bridge') || c.includes('cross chain')) return `Bridge a small amount, about $10, back through ${name} so the wallet shows two-way bridge activity.`;
-  if (c.includes('stak') || c.includes('restak')) return `Add a second small stake of about $25 through ${name} and hold the new receipt token alongside the first.`;
-  if (c.includes('perpetual') || c.includes('derivative')) return `Close the first hedged position and open a fresh small one, keeping total margin near $${cap}.`;
-  if (c.includes('prediction')) return `Place a second small position, about $10, on a different ${name} market once a week.`;
-  if (c.includes('curator') || c.includes('allocator')) return `Top up the ${name} vault with about $25 more, or deposit the same amount into a second vault it curates.`;
-  if (c.includes('stable')) return `Deposit the minted stable asset into ${name}'s savings vault on ${chain} so it earns while it sits.`;
-  if (c.includes('rwa')) return `Buy a second small tranche, about $25, of the yield-bearing asset and hold it with the first.`;
-  if (c.includes('insurance')) return `Buy a second small cover, about $25, for another position so the wallet holds two active policies.`;
-  if (c.includes('basis')) return `Roll the basis position once a month, closing the old leg and opening a fresh one at the same size.`;
-  return `Make a second small deposit of about $25 into ${name} on ${chain} so the wallet shows repeat activity.`;
-}
-
 /** Active minutes per step, in step order; the hold step is passive time, so 0 active minutes. */
 export const STEP_MINUTES = [5, 15, 10, 120, 0, 10, 5, 5];
 
@@ -967,49 +1111,56 @@ export const STEP_MINUTES = [5, 15, 10, 120, 0, 10, 5, 5];
  * never from a hand-written list of names: a fresh wallet funded with the plan size, the
  * category's main action, a second action in the same category, a weekly cadence for 12 weeks,
  * a hold period from the protocol's age, a points-page check, a safety check, and a farm log.
+ * Every step also names WHY it counts (the on-chain footprint it leaves) and what to do when
+ * it fails, with the concrete per-transaction gas cost on the protocol's own first chain.
  */
 export function farmSteps(p: SnapshotProtocol, age: number | null, planSize: number, model: ModelConstants = MODEL): FarmStep[] {
   const chain = chainOf(p);
   const cap = fmtUsd(planSize);
   const hold = holdDaysFor(age);
+  const gas = gasPerTxUsd(p, model);
+  const gasStr = `$${gas.toFixed(2)}`;
+  const fees = feesFor(p, model);
+  const weeklyGas = `$${(gas * model.plan_weeks).toFixed(2)}`;
+  const spike = `$${(gas * 3).toFixed(2)}`;
   return [
     {
-      text: `Create a fresh wallet just for farming ${p.name}, fund it with only the $${cap} you plan to use plus a little gas, and write its seed phrase on paper kept offline.`,
-      cost: 'under $3 of gas for the first transaction',
+      text: `Create a fresh wallet only for farming ${p.name}, fund it with exactly $${cap} plus $${fees.toFixed(2)} for gas — 22 transactions at ${gasStr} each on ${chain} — and write the seed on paper kept offline, never in a chat or a file. Why it counts: every later position ties to this one address, so snapshots credit a single wallet. If the funding transfer lands on the wrong chain, stop and bridge it back first; never deposit from an exchange wallet.`,
+      cost: `$${fees.toFixed(2)} of gas in total`,
       time: '5 minutes',
     },
     {
-      text: `${actionFor(p, planSize, chain)} ${gasNote(chain)}`,
-      cost: `$${cap} of capital, plus gas on ${chain}`,
+      text: `${actionFor(p, planSize, chain)} ${gasNote(chain, gas)} Why it counts: ${footprintFor(p, chain)}. If it fails: ${failFor(p, chain)}.`,
+      cost: `$${cap} of capital, plus ${gasStr} of gas`,
       time: '15 minutes to set up',
     },
     {
-      text: secondActionFor(p, planSize, chain),
-      cost: 'about $10 to $25 of capital and a little gas',
+      text: `${secondActionFor(p, planSize, chain)} Why it counts: it is a second, different contract call from the same wallet — two behaviours for a snapshot to read, not one deposit. If it fails: keep the step-2 position and retry next week; one live position still counts, and never approve an unlimited spend to make it go through.`,
+      cost: `about $10 to $25 of capital and ${gasStr} of gas`,
       time: '10 minutes',
     },
     {
-      text: `Repeat one qualifying action every week for ${model.plan_weeks} weeks, a deposit, a swap, a borrow, a vote or a claim check on ${p.name}, so the wallet stays active across snapshots.`,
-      cost: 'about $2 of gas a week',
+      text: `Every week for ${model.plan_weeks} weeks, ${weeklyActionFor(p, chain)} on ${p.name} — one transaction a week, about ${gasStr} of gas each, ${weeklyGas} over the plan. Why it counts: snapshots are taken over weeks, so a wallet that moves weekly is visible in more snapshots than one that deposits once and goes quiet. If gas spikes above ${spike} in a week, skip that week and do two actions the next; a missed week costs less than an overpaid one.`,
+      cost: `about ${gasStr} of gas a week, ${weeklyGas} over 12 weeks`,
       time: '10 minutes a week for 12 weeks',
     },
     {
-      text: `Hold the $${cap} position for at least ${hold} days inside the 12-week plan so the activity is counted in more than one snapshot before you unwind anything.`,
+      text: `Hold the $${cap} position for at least ${hold} days inside the 12 weeks — do not unwind it early. Why it counts: a position held across ${hold} days spans more than one snapshot window, so the same capital is counted repeatedly. If withdrawals pause or the position's value drops, check ${p.name}'s own docs before acting; a paused withdrawal is a wait, not a reason to approve a new contract.`,
       cost: `the $${cap} stays in the position`,
       time: `${hold} days`,
     },
     {
-      text: `Open ${p.name}'s own points or rewards page from its official site or docs and check the wallet's progress, and claim only from a link that page itself publishes.`,
-      cost: 'no fee to check, and never pay to claim',
+      text: `Open ${p.name}'s own points or rewards page from its official site or docs, confirm this wallet's address is listed, and note the points balance in the farm log. Why it counts: the points page is the protocol's own record of who farmed — if the wallet is not there, the on-chain position is not being credited. If the page shows 0 after a week, check the wallet address and chain first, then wait one more snapshot cycle; never connect to a lookalike points site from a search ad.`,
+      cost: 'no fee to check; never pay to claim',
       time: '10 minutes',
     },
     {
-      text: `Before each transaction, check the contract address and the site URL against ${p.name}'s official docs, revoke approvals you no longer use, and never pay a fee to claim a reward.`,
-      cost: 'nothing, and revoking an approval costs a little gas',
+      text: `Before every transaction, check the contract address and the site URL against ${p.name}'s official docs, approve only the exact amount for that one transaction, and revoke approvals you no longer use. Why it counts: a limited approval means a bad contract can take at most that one amount. If a site asks for an unlimited approval or a blind signature, close the tab and use the docs link instead; if a claim asks for a fee, it is not the protocol's claim — never pay to claim.`,
+      cost: `nothing; revoking costs one ${gasStr} transaction`,
       time: '5 minutes',
     },
     {
-      text: `Write the wallet address, the dates and every transaction hash in a farm log so you can repeat the position, prove the activity or unwind it cleanly.`,
+      text: `Log the wallet address, every transaction hash, the dates and the points balance each week, and plan the exit now: unwind in reverse — claim only from the protocol's own page, then withdraw the $${cap}. Why it counts: the log proves the activity if a drop needs a claim, and a planned exit avoids a rushed approval later. If a withdrawal reverts, wait and retry at off-peak gas; if the position is still locked at week 12, leave it and check again weekly rather than signing a new unlock contract.`,
       cost: 'nothing but the log',
       time: '5 minutes',
     },
@@ -1131,9 +1282,12 @@ export function walkForwardValidation(traded: SnapshotProtocol[], asOf: string, 
  * probability comes from a one-step Newton correction of the full fit (the standard
  * approximate-LOO for a GLM: beta_{-i} = beta - H_{-i}^-1 g_{-i}(beta), with H_{-i}^-1
  * from the Sherman-Morrison update of the full-fit Hessian inverse). With 758 rows and
- * ~73 coefficients the correction is small: verified offline against exact refits in
- * Python, exact LOO 74.41% / Brier 0.1840 / log-loss 0.5493 against this approximation's
- * 73.75% / 0.1835 / 0.5478 — the approximation is, if anything, slightly pessimistic.
+ * ~73 coefficients the correction is small: verified offline against an independent
+ * exact-LOO refit in Python, which also scores 73.75% / Brier 0.1837 / log-loss 0.5482 —
+ * the approximation agrees with the exact figure. (An earlier Python refit reported
+ * 74.41%; a second independent replica gives 73.75%, 5 protocols flipping at the 0.5
+ * threshold — a solver detail. The 74.41% figure is withdrawn; 73.75% is the verified
+ * number, shown on the board.)
  */
 export function launchOddsValidation(protocols: SnapshotProtocol[], asOf: string, model: ModelConstants = MODEL): Validation['launch_odds'] {
   const fit = fitLogisticOdds(protocols, asOf, model);
@@ -1365,6 +1519,8 @@ export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): B
       drop_usd: e.drop,
       net_usd: e.net,
       net_per_hour_usd: round2(e.net / hours),
+      breakeven_share: breakevenShareFor(e.planSize, e.fees, e.s.implied, e.p.tvl_usd),
+      hold_days: holdDaysFor(e.s.age),
       verdict: verdictFor(e.net),
       verdict_table: verdictTableFor(e.planSize, e.fees, e.s.implied, e.p.tvl_usd, model),
       comparables: e.comparables,
