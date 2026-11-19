@@ -105,7 +105,7 @@ td:first-child .sub{white-space:nowrap}
 .steps li{padding-left:var(--s1)}
 .steps b{display:block;font-weight:500}
 .farm{width:100%;font-size:13px;line-height:1.45;border-collapse:collapse}
-.farm th,.farm td{padding:4px 8px;border-bottom:1px solid var(--border);vertical-align:top;text-align:left}
+.farm th,.farm td{padding:3px 8px;border-bottom:1px solid var(--border);vertical-align:top;text-align:left}
 .farm thead th{position:static;color:var(--muted);font-size:11px}
 .farm td.num{white-space:normal;font-family:var(--font-num);font-size:13px;font-weight:700}
 .farm td:first-child{white-space:nowrap}
@@ -186,7 +186,7 @@ td:first-child .sub{white-space:nowrap}
 .duo .rangebar b{top:-3px;height:12px}
 .spark{flex:none;text-align:right}
 .spark svg{display:block;margin-left:auto}
-.detail{width:min(680px,96vw)}
+.detail{width:min(760px,96vw)}
 .vt{width:100%;font-size:13px;border-collapse:collapse}
 .vt th,.vt td{padding:var(--s2);border:1px solid var(--border);text-align:right}
 .vt th:first-child,.vt td:first-child{text-align:left}

@@ -395,12 +395,12 @@ return '<tr><td class="num">' + (i + 1) + '</td><td class="num">' + esc(whenOf(p
 var stepsHtml = '<table class="farm"><thead><tr><th>#</th><th>When</th><th>Step</th><th>Cost</th><th>Time</th></tr></thead><tbody>' + steps + '</tbody></table>';
 var tl = [];
 (row.farm_steps || []).forEach(function (st, i) { var pp = parseStep(st); if (!pp) return; var w = whenOf(pp.action, row.hold_days || 30); var g = tl[tl.length - 1]; if (g && g[0] === w) g[1].push(i + 1); else tl.push([w, [i + 1]]); });
-var timeline = '<p class="why">Plan timeline: ' + tl.map(function (g) { return g[0] + ' — step' + (g[1].length > 1 ? 's ' : ' ') + g[1].join(', '); }).join(' · ') + '.</p>';
+var timeline = '<p class="why">Plan timeline: ' + tl.map(function (g) { return g[0] + ': ' + g[1][0] + (g[1].length > 1 ? '–' + g[1][g[1].length - 1] : ''); }).join(' · ') + '.</p>';
 function tlc(w){if(w==='Weekly · exit')return '#a3e635';if(w.indexOf('Weekly')===0)return '#2dd4a7';if(w.indexOf('Day 0')===0)return '#f2a93b';if(w.indexOf('Days')===0)return '#7aa2f0';if(w==='Week 1+')return '#c084fc';if(w==='Every tx')return '#f26d6d';return '#94a3b8';}
 var strip='<div class="tl" aria-hidden="true">'+(row.farm_steps||[]).map(function(st,i){var pp=parseStep(st);var w=pp?whenOf(pp.action,row.hold_days||30):'Day 0';return '<i style="background:'+tlc(w)+'">'+(i+1)+'</i>';}).join('')+'</div>';
 var n35=netAt(row,row.plan_size_usd||1000,0.035),v35=verdictAt(row,row.plan_size_usd||1000,0.035);
 var n14=netAt(row,row.plan_size_usd||1000,0.14),v14=verdictAt(row,row.plan_size_usd||1000,0.14);
-var stop='<p class="caveat">Stop rule: add nothing more below '+(beShare*100).toFixed(1)+'%. At 3.5% the plan nets '+fmtNet(n35)+' ('+v35+'); at 14% it nets '+fmtNet(n14)+' ('+v14+'). If a step fails, retry next week.</p>';
+var stop='<p class="caveat">Stop rule: add nothing more below '+(beShare*100).toFixed(1)+'%. At 3.5% the plan nets '+fmtNet(n35)+' ('+v35+'); at 14% it nets '+fmtNet(n14)+' ('+v14+').</p>';
 var comps = row.comparables || [];
 var compHtml = comps.length ? '<table class="mini comp"><thead><tr><th>Token that trades</th><th>TVL</th><th>MCAP</th><th>x TVL</th><th>Applied here</th></tr></thead><tbody>' +
 comps.map(function (p) { return '<tr><td>' + esc(p.name) + '</td><td class="num">' + esc(fmtUsd(p.tvl_usd)) + '</td><td class="num">' + esc(fmtUsd(p.mcap_usd)) + '</td><td class="num">' + esc(fmtMult(p.multiple)) + '</td><td class="num">' + esc(fmtUsd(p.applied_usd)) + '</td></tr>'; }).join('') + '</tbody></table>'
