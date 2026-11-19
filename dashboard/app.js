@@ -181,7 +181,7 @@ var tiles = [
 ['Ranked', String(k.ranked !== undefined ? k.ranked : DATA.board_size), (DATA.watchlist_size || 0) + ' watchlist · ' + rowsAll.filter(function (r) { return r.tvl_usd < DATA.floor_usd; }).length + ' below floor'],
 ['Implied value', fmtUsd(total), 'over the board'],
 ['Out-of-sample miss', (k.loo_miss !== undefined ? k.loo_miss : k.loo_median_miss) !== undefined ? 'x' + (k.loo_miss !== undefined ? k.loo_miss : k.loo_median_miss).toFixed(2) : 'n/a', 'LOO · flat x' + (DATA.validation && DATA.validation.flat_baseline ? DATA.validation.flat_baseline.median_miss.toFixed(2) : 'n/a')],
-['Range holds', k.range_holds_pct !== undefined ? Math.round(k.range_holds_pct) + '%' : 'n/a', 'held-out caps in P10–P90'],
+['Range holds', k.range_holds_pct !== undefined ? Math.round(k.range_holds_pct) + '%' : 'n/a', 'expect 80% · in P10–P90'],
 ['Launch odds, held out', k.launch_odds_accuracy_pct !== undefined ? Math.round(k.launch_odds_accuracy_pct) + '%' : 'n/a', 'held out · base rate ' + (DATA.validation && DATA.validation.launch_odds ? Math.round(DATA.validation.launch_odds.base_rate_pct) + '%' : 'n/a')],
 ['Worth farming', String(worth), 'Farm at plan, 7%, after fees']
 ];
@@ -189,7 +189,7 @@ $('kpi').innerHTML = tiles.map(function (t) { return '<div class="kpi-tile"><spa
 }
 var ACCT_COLORS = ['#f2a93b', '#2dd4a7', '#7aa2f0', '#f26d6d', '#c084fc', '#f472b6', '#94a3b8', '#eab308', '#38bdf8', '#a3e635'];
 var ACCT_LABEL = { 'Ranked — pre-token, standalone': 'Ranked', 'Liquid staking / restaking': 'Liquid staking', 'Exchange custody (CEX)': 'Exchange custody', 'Wrapped / staked by name': 'Wrapped / staked' };
-var ACCT_SHORT = { 'Ranked — pre-token, standalone': 'no token recorded', 'Already has a token': 'token already trades', 'Bridge': 'moves value between chains', 'Liquid staking / restaking': 'receipt for a traded token', 'Exchange custody (CEX)': 'exchange custody, no launch', 'Versioned name': 'version of another protocol', 'Wrapped / staked by name': 'product of a traded token' };
+var ACCT_SHORT = { 'Ranked — pre-token, standalone': 'no token recorded', 'Already has a token': 'token already trades', 'Bridge': 'cross-chain', 'Liquid staking / restaking': 'receipt token', 'Exchange custody (CEX)': 'exchange custody', 'Versioned name': 'versioned release', 'Wrapped / staked by name': 'wrapped product' };
 function renderAccounting() {
 var acc = DATA.accounting;
 var sec = document.querySelector('.acct');
@@ -272,7 +272,8 @@ if (v.walkforward && v.walkforward.median_miss > v.loo.median_miss * 1.2) caveat
 if (v.flat_baseline && v.flat_baseline.median_miss <= v.loo.median_miss) caveats.push('Flat baseline (x' + v.flat_baseline.median_miss.toFixed(2) + ') matches the fitted curve — the curve adds little here.');
 if (v.launch_odds && v.launch_odds.accuracy_pct < v.launch_odds.base_rate_pct) caveats.push('Launch odds call fewer right (' + Math.round(v.launch_odds.accuracy_pct) + '%) than the ' + Math.round(v.launch_odds.base_rate_pct) + '% base rate — the odds add no signal here.');
 if (!caveats.length) caveats.push('Small figures miss worst.');
-vel.innerHTML = '<p class="sub">Out-of-sample tests: <b>Each out:</b> each of the ' + (v.loo.n || 0) + ' traded tokens priced from a fit that never saw it. <b>By time:</b> the ' + (v.walkforward ? v.walkforward.n : 0) + ' newest, from a fit on the older ones.</p>' +
+vel.innerHTML = '<p class="formula">size curve: 10^' + M.curve_a + ' × forward TVL^' + M.curve_b + ' — fitted on ' + (v.loo.n || 0) + ' traded tokens</p>' +
+'<p class="sub">Out-of-sample tests: <b>Each out:</b> each of the ' + (v.loo.n || 0) + ' traded tokens priced from a fit that never saw it. <b>By time:</b> the ' + (v.walkforward ? v.walkforward.n : 0) + ' newest, from a fit on the older ones.</p>' +
 '<div class="vstat"><div><span>LOO median miss</span><b>x' + v.loo.median_miss.toFixed(2) + '</b></div><div><span>LOO within 3x</span><b>' + Math.round(v.loo.within_3x_pct) + '%</b></div><div><span>In P25–P75 (expect 50%)</span><b>' + Math.round(v.loo.in_p25_p75_pct) + '%</b></div><div><span>In P10–P90 (expect 80%)</span><b>' + Math.round(v.loo.in_p10_p90_pct) + '%</b></div><div><span>Walk-forward median miss</span><b>x' + (v.walkforward ? v.walkforward.median_miss.toFixed(2) : 'n/a') + '</b></div><div><span>Flat baseline median miss</span><b>x' + (v.flat_baseline ? v.flat_baseline.median_miss.toFixed(2) : 'n/a') + '</b></div></div>' +
 '<p class="sub">Launch odds held out: ' + (v.launch_odds ? Math.round(v.launch_odds.accuracy_pct) + '% right vs ' + Math.round(v.launch_odds.base_rate_pct) + '% base (Brier ' + v.launch_odds.brier.toFixed(4) + ', log-loss ' + v.launch_odds.log_loss.toFixed(4) + '). An independent exact leave-one-out refit, verified offline, also scores 73.75% — the figure shown is a one-step-Newton approximation that agrees with it.' : 'not reported') + '</p>' +
 '<p class="sub">Value ranges use the LOO residual quantiles (q10 ' + v.loo.q10 + ', q90 ' + v.loo.q90 + ') — the typical band spans ' + Math.round(v.loo.q90 / v.loo.q10) + '×, and points typically miss by x' + v.loo.median_miss.toFixed(2) + ': read ranges, not points.</p>' +
