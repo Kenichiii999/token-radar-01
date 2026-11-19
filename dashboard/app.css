@@ -33,7 +33,7 @@ button{cursor:pointer}
 .fact{display:flex;align-items:baseline;gap:6px}
 .fact b{font-family:var(--font-num);font-size:13px;font-weight:600;color:var(--amber)}
 .fact span{color:var(--muted);font-size:12px}
-.controls{display:flex;flex-wrap:wrap;align-items:end;gap:6px var(--s2);padding:6px 0;border-top:1px solid var(--border)}
+.controls{display:flex;flex-wrap:wrap;align-items:end;gap:6px var(--s2);padding:4px 0;border-top:1px solid var(--border)}
 .field{display:grid;gap:2px}
 .field label{color:var(--muted);font-size:12px;line-height:1.2}
 .field input,.field select{min-height:28px;padding:0 var(--s3);border:1px solid var(--border);border-radius:var(--r1);background:var(--surface);min-width:170px}
@@ -125,7 +125,7 @@ td:first-child .sub{white-space:nowrap}
 .kpi-tile span{color:var(--muted);font-size:10px;letter-spacing:.08em;text-transform:uppercase}
 .kpi-tile b{font-size:26px;line-height:1.15;font-family:var(--font-num);font-weight:600;color:var(--amber)}
 .kpi-tile small{color:var(--muted);font-size:11px;line-height:1.25}
-.acct{padding-bottom:var(--s2)}
+.acct{padding-bottom:2px}
 .acct h2{margin-bottom:4px;color:var(--muted);font-size:13px;letter-spacing:.08em;text-transform:uppercase}
 .acct-bar{display:flex;height:10px;border-radius:7px;overflow:hidden;background:var(--surface)}
 .acct-bar i{display:block;height:100%}
@@ -152,7 +152,10 @@ td:first-child .sub{white-space:nowrap}
 .vstat div{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r1);padding:var(--s2) var(--s3)}
 .vstat span{display:block;color:var(--muted);font-size:12px}
 .vstat b{font-family:var(--font-num);font-size:21px;color:var(--amber)}
-.checkstrip{font-family:var(--font-num);font-size:11px;line-height:1.4;background:rgba(242,169,59,.12);border:1px solid var(--amber);border-radius:var(--r1);padding:3px var(--s3);margin-bottom:4px;color:var(--ink)}
+.checkstrip{font-family:var(--font-num);font-size:11px;line-height:1.4;background:rgba(242,169,59,.12);border:1px solid var(--amber);border-radius:var(--r1);padding:3px var(--s3);margin-bottom:2px;color:var(--ink)}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:2px}
+.chips:empty{display:none}
+.chips .badge{margin-left:0}
 .checklist{margin:0;padding-left:var(--s5);display:grid;gap:var(--s2);font-size:13px;color:var(--muted)}
 .checklist b{color:var(--ink)}
 .caveat{margin-top:var(--s3);font-size:13px;line-height:1.6;color:var(--muted);border-left:3px solid var(--amber);padding-left:var(--s3)}
@@ -166,6 +169,7 @@ td:first-child .sub{white-space:nowrap}
 .vmarg{color:var(--amber);font-weight:600}
 .vskip{color:var(--red);font-weight:600}
 .netcell{display:grid;gap:0}
+.netcell span{white-space:nowrap}
 .netcell .num{font-weight:600}
 .rangebar{width:96px;height:4px;border-radius:3px;background:var(--border);position:relative;overflow:visible}
 .rangebar i{position:absolute;top:0;bottom:0;background:var(--amber);border-radius:3px}

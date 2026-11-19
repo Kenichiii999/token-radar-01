@@ -6,6 +6,7 @@ var M = DATA.model || {};
 var rowsAll = DATA.rows, liveAll = DATA.live || [];
 var state = { q: '', category: 'all', chain: 'all', watch: false, tab: 'pre-token', sort: 'rank', dir: 'asc', verdict: 'all', dep: 'plan', share: '0.07', selected: null };
 var $ = function (id) { return document.getElementById(id); };
+function on(el, ev, fn) { el.addEventListener(ev, fn); }
 var app = $('board'), head = $('head'), tbody = $('rows'), dialog = $('detail');
 function esc(s) { return String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
 var usd0 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
@@ -63,14 +64,13 @@ var bi = 0, bd = Infinity;
 for (var i = 0; i < arr.length; i++) { var d = Math.abs(arr[i] - v); if (d < bd) { bd = d; bi = i; } }
 return bi;
 }
-function dropAt(row, dep, share) { return row.implied_value_usd * share * dep / Math.max(1, row.tvl_usd); }
 function netAt(row, dep, share) {
 var vt = row.verdict_table;
 if (vt && vt.nets) {
 var di = nearestIdx(vt.deposits, dep), si = nearestIdx(vt.shares, share);
 if (di >= 0 && si >= 0 && vt.nets[di] && vt.nets[di][si] !== undefined) return vt.nets[di][si];
 }
-return dropAt(row, dep, share) - (row.fees_usd || 0);
+return 0;
 }
 function verdictAt(row, dep, share) {
 var vt = row.verdict_table;
@@ -78,9 +78,7 @@ if (vt && vt.verdicts) {
 var di = nearestIdx(vt.deposits, dep), si = nearestIdx(vt.shares, share);
 if (di >= 0 && si >= 0 && vt.verdicts[di] && vt.verdicts[di][si]) return vt.verdicts[di][si];
 }
-if (row.verdict && dep === (row.plan_size_usd || 1000) && Math.abs(share - 0.07) < 0.001) return row.verdict;
-var n = netAt(row, dep, share);
-return n > 0 ? 'FARM' : (n > -10 ? 'MARGINAL' : 'SKIP');
+return row.verdict || 'SKIP';
 }
 function netSel(row) { return netAt(row, depVal(row), shareVal()); }
 function verdictSel(row) { return verdictAt(row, depVal(row), shareVal()); }
@@ -155,7 +153,9 @@ $('asOf').textContent = 'Snapshot ' + DATA.as_of;
 $('src').textContent = (DATA.source && DATA.source.indexOf('://') >= 0) ? 'DefiLlama protocol index' : (DATA.source || 'DefiLlama protocol index');
 $('modelVer').textContent = (DATA.model_version || 'comps-3') + ' model';
 $('headline').textContent = (w || 40) + ' watchlist protocols, ranked by implied value';
-$('ledeText').textContent = 'Implied value = value if it launches × launch odds, fitted on traded tokens. All ' + DATA.board_size + ' pre-token protocols — ' + w + ' watchlist plus ' + (DATA.board_size - w) + ' more; ' + rowsAll.filter(function (r) { return r.tvl_usd < DATA.floor_usd; }).length + ' below the ' + fmtUsd(DATA.floor_usd) + ' floor.';
+var A = DATA.accounting || [];
+var ac = function (i) { return A[i] ? A[i].count : 0; };
+$('ledeText').textContent = 'Implied value = value if it launches × launch odds. ' + DATA.board_size + ' pass the rule — ' + w + ' watchlist + ' + (DATA.board_size - w) + ' more. The other ' + (ac(2) + ac(3) + ac(4) + ac(5) + ac(6)) + ' fail it: ' + ac(2) + ' bridges incl. circle-gateway, ' + ac(3) + ' liquid staking, ' + ac(4) + ' CEX, ' + ac(5) + ' versioned, ' + ac(6) + ' wrapped — 0 pass.';
 $('factWatch').textContent = w + ' / ' + w;
 $('factBoard').textContent = String(DATA.board_size);
 $('factEarly').textContent = String(rowsAll.filter(function (r) { return r.tvl_usd < DATA.floor_usd; }).length);
@@ -201,7 +201,7 @@ $('acctLegend').innerHTML = acc.map(function (a, i) { return '<li><span class="d
 }
 function th(key, label) {
 var arrow = state.sort === key ? ' <span class="arrow" aria-hidden="true">' + (state.dir === 'desc' ? '↓' : '↑') + '</span>' : '';
-return '<th scope="col" aria-sort="' + (state.sort === key ? (state.dir === 'desc' ? 'descending' : 'ascending') : 'none') + '"><button type="button" data-sort="' + key + '">' + label + arrow + '</button></th>';
+return '<th aria-sort="' + (state.sort === key ? (state.dir === 'desc' ? 'descending' : 'ascending') : 'none') + '"><button type="button" data-sort="' + key + '">' + label + arrow + '</button></th>';
 }
 function rangeBar(r, max) {
 var lo = r.value_low_usd, hi = r.value_high_usd;
@@ -210,6 +210,14 @@ var w = Math.max(2, Math.round((hi - lo) / max * 100)), left = Math.round(lo / m
 return '<span class="rangebar" aria-hidden="true"><i style="left:' + left + '%;width:' + w + '%"></i><b style="left:' + at + '%"></b></span>';
 }
 function renderTable() {
+var chips = [];
+if (state.tab === 'live') chips.push('Live token');
+if (state.watch) chips.push('Watchlist only');
+if (state.category !== 'all') chips.push(state.category);
+if (state.chain !== 'all') chips.push(state.chain);
+if (state.verdict !== 'all') chips.push(state.verdict);
+if (state.q) chips.push('"' + state.q + '"');
+$('chips').innerHTML = chips.map(function (c) { return '<i class="badge watch">' + esc(c) + '</i>'; }).join('');
 var pre = state.tab === 'pre-token';
 var list = sorted((pre ? rowsAll : liveAll).filter(function (r) { return matches(r); }));
 $('tabPre').setAttribute('aria-pressed', pre ? 'true' : 'false');
@@ -218,11 +226,11 @@ $('caption').textContent = pre
 ? 'Pre-token protocols, strongest implied value first. Select a row for its model and farm plan.'
 : 'Token live: these protocols already trade, so their market cap is a fact, not a model. They are set aside from the pre-token ranking.';
 if (pre) {
-head.innerHTML = '<tr>' + th('rank', 'Rank') + th('name', 'Protocol') + th('tvl', 'TVL') + th('growth', '7d') + th('age', 'Tracked') + th('implied', 'Launch odds') + th('implied', 'Implied value · range') + th('net', 'Net of fees · verdict') + '</tr>';
+head.innerHTML = '<tr>' + th('rank', 'Rank') + th('name', 'Protocol') + th('tvl', 'TVL') + th('growth', '7d') + th('age', 'Tracked') + th('implied', 'Launch odds') + th('implied', 'Implied value · range') + th('net', 'Net · farm cost') + '</tr>';
 var total = list.reduce(function (s, r) { return s + (r.implied_value_usd || 0); }, 0);
 $('count').textContent = list.length + ' of ' + rowsAll.length + ' rows · ' + fmtUsd(total) + ' implied in view · sorted by ' + state.sort;
 } else {
-head.innerHTML = '<tr>' + th('name', 'Protocol') + th('tvl', 'TVL') + th('growth', '7d') + th('tvl', 'Market cap') + '<th scope="col">Token</th></tr>';
+head.innerHTML = '<tr>' + th('name', 'Protocol') + th('tvl', 'TVL') + th('growth', '7d') + th('tvl', 'Market cap') + '<th>Token</th></tr>';
 $('count').textContent = list.length + ' of ' + liveAll.length + ' shown (top ' + liveAll.length + ' of ' + (DATA.live_size || liveAll.length) + ' traded)';
 }
 $('empty').hidden = list.length !== 0;
@@ -244,7 +252,7 @@ return '<tr data-slug="' + esc(r.slug) + '" data-selected="' + (state.selected =
 '<td class="num">' + esc(fmtAge(r.age_days)) + '</td>' +
 '<td class="num">' + esc(odds) + '</td>' +
 '<td><div class="implied"><span class="num">' + esc(fmtUsd(r.implied_value_usd)) + '</span>' + rangeBar(r, max) + '<span class="sub">' + esc(fmtUsd(r.value_low_usd)) + ' – ' + esc(fmtUsd(r.value_high_usd)) + '</span></div></td>' +
-'<td><div class="netcell"><span class="num ' + vClass(v) + '">' + esc(fmtNet(n)) + '</span><span class="' + vClass(v) + '">' + esc(v) + '</span></div></td></tr>';
+'<td><div class="netcell"><span class="num ' + vClass(v) + '">' + esc(fmtNet(n)) + '</span><span><span class="' + vClass(v) + '">' + esc(v) + '</span> <span class="sub">' + esc(fmtNet(r.fees_usd)) + ' · ' + (r.time_hours || 0).toFixed(1) + 'h</span></span></div></td></tr>';
 }).join('');
 } else {
 tbody.innerHTML = list.map(function (r) {
@@ -306,7 +314,7 @@ var cats = DATA.categories;
 var cel = $('cats');
 if (cats && cats.length) {
 var top = cats.slice().sort(function (a, b) { return b.rows - a.rows; }).slice(0, 10);
-cel.innerHTML = '<table class="mini"><thead><tr><th scope="col">Category</th><th scope="col">Rows</th><th scope="col">With token</th><th scope="col">Ever %</th><th scope="col">Premium</th></tr></thead><tbody>' +
+cel.innerHTML = '<table class="mini"><thead><tr><th>Category</th><th>Rows</th><th>With token</th><th>Ever %</th><th>Premium</th></tr></thead><tbody>' +
 top.map(function (c) { return '<tr><td>' + esc(c.category) + '</td><td class="num">' + c.rows + '</td><td class="num">' + c.with_token + '</td><td class="num">' + Math.round(c.ever_pct) + '%</td><td class="num">' + fmtMult(c.premium) + '</td></tr>'; }).join('') + '</tbody></table>';
 } else cel.innerHTML = '<p class="sub">Category split is not in this data file.</p>';
 renderScatter();
@@ -382,7 +390,7 @@ return '<tr><td class="num">' + (i + 1) + '</td><td class="num">' + esc(whenOf(p
 (p.ifb ? '<span class="fwhy">' + esc(p.ifb) + '</span>' : '') + '</td>' +
 '<td class="num">' + esc(p.cost) + '</td><td class="num">' + esc(p.time) + '</td></tr>';
 }).join('');
-var stepsHtml = '<table class="farm"><thead><tr><th scope="col">#</th><th scope="col">When</th><th scope="col">Step</th><th scope="col">Cost</th><th scope="col">Time</th></tr></thead><tbody>' + steps + '</tbody></table>';
+var stepsHtml = '<table class="farm"><thead><tr><th>#</th><th>When</th><th>Step</th><th>Cost</th><th>Time</th></tr></thead><tbody>' + steps + '</tbody></table>';
 var tl = [];
 (row.farm_steps || []).forEach(function (st, i) { var pp = parseStep(st); if (!pp) return; var w = whenOf(pp.action, row.hold_days || 30); var g = tl[tl.length - 1]; if (g && g[0] === w) g[1].push(i + 1); else tl.push([w, [i + 1]]); });
 var timeline = '<p class="why">Plan timeline: ' + tl.map(function (g) { return g[0] + ' — step' + (g[1].length > 1 ? 's ' : ' ') + g[1].join(', '); }).join(' · ') + '.</p>';
@@ -392,13 +400,13 @@ var n35=netAt(row,row.plan_size_usd||1000,0.035),v35=verdictAt(row,row.plan_size
 var n14=netAt(row,row.plan_size_usd||1000,0.14),v14=verdictAt(row,row.plan_size_usd||1000,0.14);
 var stop='<p class="caveat">Stop rule: break-even is a '+(beShare*100).toFixed(1)+'% drop share — add nothing more below it. At 3.5% the plan nets '+fmtNet(n35)+' ('+v35+'); at 14% it nets '+fmtNet(n14)+' ('+v14+'). If a step fails, retry next week.</p>';
 var comps = row.comparables || [];
-var compHtml = comps.length ? '<table class="mini comp"><thead><tr><th scope="col">Token that trades</th><th scope="col">TVL</th><th scope="col">MCAP</th><th scope="col">x TVL</th><th scope="col">Applied here</th></tr></thead><tbody>' +
+var compHtml = comps.length ? '<table class="mini comp"><thead><tr><th>Token that trades</th><th>TVL</th><th>MCAP</th><th>x TVL</th><th>Applied here</th></tr></thead><tbody>' +
 comps.map(function (p) { return '<tr><td>' + esc(p.name) + '</td><td class="num">' + esc(fmtUsd(p.tvl_usd)) + '</td><td class="num">' + esc(fmtUsd(p.mcap_usd)) + '</td><td class="num">' + esc(fmtMult(p.multiple)) + '</td><td class="num">' + esc(fmtUsd(p.applied_usd)) + '</td></tr>'; }).join('') + '</tbody></table>'
 : '<p class="sub">No nearest comparables in this data file.</p>';
 var vt = row.verdict_table;
 var deps = vt && vt.deposits ? vt.deposits : [1000, row.plan_size_usd || 1000, 10000];
 var shares = vt && vt.shares ? vt.shares : [0.035, 0.07, 0.14];
-var vtHtml = '<table class="vt"><thead><tr><th scope="col">Drop share \\ deposit</th>' + deps.map(function (d) { return '<th scope="col">' + esc(fmtUsd(d)) + (d === (row.plan_size_usd || 1000) ? ' (plan)' : '') + '</th>'; }).join('') + '</tr></thead><tbody>' +
+var vtHtml = '<table class="vt"><thead><tr><th>Drop share \\ deposit</th>' + deps.map(function (d) { return '<th>' + esc(fmtUsd(d)) + (d === (row.plan_size_usd || 1000) ? ' (plan)' : '') + '</th>'; }).join('') + '</tr></thead><tbody>' +
 shares.map(function (sh) {
 return '<tr><td>' + Math.round(sh * 1000) / 10 + '%</td>' + deps.map(function (d) {
 var nn = netAt(row, d, sh), vv = verdictAt(row, d, sh);
@@ -442,7 +450,7 @@ dialog.innerHTML =
 '<section class="detail-section"><h3>Nearest traded comparables</h3>' + compHtml + '</section>' +
 '<section class="detail-section"><h3>Verdict table — net of fees</h3>' + vtHtml +
 '<p class="sub" style="margin-top:8px">Now: ' + esc(fmtUsd(dep)) + ' deposit, ' + Math.round(share * 1000) / 10 + '% drop share — net <b class="' + vClass(verdictSel(row)) + '">' + esc(fmtNet(net)) + ' · ' + esc(verdictSel(row)) + '</b>.</p></section>';
-dialog.querySelector('.close').addEventListener('click', function () { dialog.close(); });
+on(dialog.querySelector('.close'),'click', function () { dialog.close(); });
 if (typeof dialog.showModal === 'function') { if (!dialog.open) dialog.showModal(); }
 else dialog.setAttribute('open', '');
 }
@@ -459,18 +467,18 @@ readHash();
 renderMeta(); renderKpi(); renderAccounting(); fillOptions(); syncControls(); render(); renderPanels();
 app.setAttribute('aria-busy', 'false');
 if (state.selected) openDetail(state.selected);
-$('q').addEventListener('input', function () { state.q = $('q').value; writeHash(); render(); });
-$('category').addEventListener('change', function () { state.category = $('category').value; writeHash(); render(); });
-$('chain').addEventListener('change', function () { state.chain = $('chain').value; writeHash(); render(); });
-$('watch').addEventListener('change', function () { state.watch = $('watch').checked; writeHash(); render(); });
-$('verdict').addEventListener('change', function () { state.verdict = $('verdict').value; writeHash(); render(); });
-$('sortSel').addEventListener('change', function () { state.sort = $('sortSel').value; state.dir = (state.sort === 'name') ? 'asc' : 'desc'; if (state.sort === 'rank') state.dir = 'asc'; writeHash(); render(); });
-$('depSeg').addEventListener('click', function (e) { var b = e.target.closest ? e.target.closest('button[data-dep]') : null; if (!b) return; state.dep = b.getAttribute('data-dep'); writeHash(); syncControls(); render(); });
-$('shareSeg').addEventListener('click', function (e) { var b = e.target.closest ? e.target.closest('button[data-share]') : null; if (!b) return; state.share = b.getAttribute('data-share'); writeHash(); syncControls(); render(); });
-$('tabPre').addEventListener('click', function () { state.tab = 'pre-token'; state.sort = 'rank'; state.dir = 'asc'; writeHash(); syncControls(); render(); });
-$('tabLive').addEventListener('click', function () { state.tab = 'live'; state.sort = 'tvl'; state.dir = 'desc'; writeHash(); syncControls(); render(); });
-$('clearFilters').addEventListener('click', function () { state.q = ''; state.category = 'all'; state.chain = 'all'; state.watch = false; state.verdict = 'all'; syncControls(); fillOptions(); writeHash(); render(); });
-head.addEventListener('click', function (e) {
+on($('q'),'input', function () { state.q = $('q').value; writeHash(); render(); });
+on($('category'),'change', function () { state.category = $('category').value; writeHash(); render(); });
+on($('chain'),'change', function () { state.chain = $('chain').value; writeHash(); render(); });
+on($('watch'),'change', function () { state.watch = $('watch').checked; writeHash(); render(); });
+on($('verdict'),'change', function () { state.verdict = $('verdict').value; writeHash(); render(); });
+on($('sortSel'),'change', function () { state.sort = $('sortSel').value; state.dir = (state.sort === 'name') ? 'asc' : 'desc'; if (state.sort === 'rank') state.dir = 'asc'; writeHash(); render(); });
+on($('depSeg'),'click', function (e) { var b = e.target.closest ? e.target.closest('button[data-dep]') : null; if (!b) return; state.dep = b.getAttribute('data-dep'); writeHash(); syncControls(); render(); });
+on($('shareSeg'),'click', function (e) { var b = e.target.closest ? e.target.closest('button[data-share]') : null; if (!b) return; state.share = b.getAttribute('data-share'); writeHash(); syncControls(); render(); });
+on($('tabPre'),'click', function () { state.tab = 'pre-token'; state.sort = 'rank'; state.dir = 'asc'; writeHash(); syncControls(); render(); });
+on($('tabLive'),'click', function () { state.tab = 'live'; state.sort = 'tvl'; state.dir = 'desc'; writeHash(); syncControls(); render(); });
+on($('clearFilters'),'click', function () { state.q = ''; state.category = 'all'; state.chain = 'all'; state.watch = false; state.verdict = 'all'; syncControls(); fillOptions(); writeHash(); render(); });
+on(head,'click', function (e) {
 var b = e.target.closest ? e.target.closest('button[data-sort]') : null;
 if (!b) return;
 var k = b.getAttribute('data-sort');
@@ -478,14 +486,14 @@ if (state.sort === k) state.dir = state.dir === 'desc' ? 'asc' : 'desc';
 else { state.sort = k; state.dir = (k === 'name' || k === 'rank') ? 'asc' : 'desc'; }
 syncControls(); render();
 });
-tbody.addEventListener('click', function (e) {
+on(tbody,'click', function (e) {
 var tr = e.target.closest ? e.target.closest('tr[data-slug]') : null;
 if (tr) openDetail(tr.getAttribute('data-slug'));
 });
-tbody.addEventListener('keydown', function (e) {
+on(tbody,'keydown', function (e) {
 var tr = e.target.closest ? e.target.closest('tr[data-slug]') : null;
 if (tr && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openDetail(tr.getAttribute('data-slug')); }
 });
-dialog.addEventListener('close', function () { if (state.selected) { state.selected = null; writeHash(); render(); } });
-window.addEventListener('hashchange', function () { readHash(); syncControls(); fillOptions(); render(); if (state.selected) openDetail(state.selected); });
+on(dialog,'close', function () { if (state.selected) { state.selected = null; writeHash(); render(); } });
+on(window,'hashchange', function () { readHash(); syncControls(); fillOptions(); render(); if (state.selected) openDetail(state.selected); });
 })();
