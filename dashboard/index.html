@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Token Radar — pre-token protocols ranked by implied value</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<a class="skip" href="#board">Skip to the board</a>
+<main id="board" tabindex="-1" aria-busy="true">
+<div class="shell">
+<header class="top">
+<div class="brand"><span class="mark" aria-hidden="true"></span><span class="brand-name">TOKEN RADAR</span></div>
+<div class="top-meta"><span id="asOf"></span><span id="src"></span><span id="modelVer"></span></div>
+</header>
+<section class="lede">
+<div>
+<h1 id="headline"></h1>
+<p id="ledeText" class="lede-text"></p>
+</div>
+<div class="facts" aria-label="Coverage">
+<div class="fact"><span>Watchlist covered</span><b id="factWatch"></b></div>
+<div class="fact"><span>Pre-token rows scored</span><b id="factBoard"></b></div>
+<div class="fact"><span>Rows below the floor</span><b id="factEarly"></b></div>
+<div class="fact"><span>Live-token protocols set aside</span><b id="factLive"></b></div>
+</div>
+</section>
+<section class="kpi" id="kpi" aria-label="Headline figures"></section>
+<section class="acct" aria-label="Where the 758 protocols went">
+<h2>758 protocols read — <span id="acctLine"></span></h2>
+<div class="acct-bar" id="acctBar" role="img" aria-label="Accounting of all protocols read"></div>
+<ul class="acct-legend" id="acctLegend"></ul>
+</section>
+<div class="controls">
+<div class="field"><label for="q">Search</label><input type="search" id="q" placeholder="Name, slug, category or chain" aria-label="Search the board"></div>
+<div class="field"><label for="category">Category</label><select id="category" aria-label="Filter by category"></select></div>
+<div class="field"><label for="chain">Chain</label><select id="chain" aria-label="Filter by chain"></select></div>
+<label class="toggle"><input type="checkbox" id="watch"> Watchlist only</label>
+<div class="field"><label for="verdict">Verdict</label><select id="verdict" aria-label="Filter by verdict"><option value="all">Any verdict</option><option value="FARM">Farm</option><option value="MARGINAL">Marginal</option><option value="SKIP">Skip</option></select></div>
+<div class="field"><label id="depLabel">Deposit</label><div class="seg" role="group" aria-labelledby="depLabel" id="depSeg"><button type="button" data-dep="1000">$1,000</button><button type="button" data-dep="plan" aria-pressed="true">Plan size</button><button type="button" data-dep="10000">$10,000</button></div></div>
+<div class="field"><label id="shareLabel">Drop share</label><div class="seg" role="group" aria-labelledby="shareLabel" id="shareSeg"><button type="button" data-share="0.035">3.5%</button><button type="button" data-share="0.07" aria-pressed="true">7%</button><button type="button" data-share="0.14">14%</button></div></div>
+<div class="field"><label for="sortSel">Sort by</label><select id="sortSel" aria-label="Sort the board"><option value="rank">Rank</option><option value="net">Net of fees</option><option value="implied">Implied value</option><option value="name">Name</option><option value="tvl">TVL</option><option value="growth">7d change</option><option value="age">Age</option></select></div>
+<div class="tabs" role="group" aria-label="Token status">
+<button type="button" id="tabPre" aria-pressed="true">Pre-token</button>
+<button type="button" id="tabLive" aria-pressed="false">Live token</button>
+</div>
+<span class="count" id="count" aria-live="polite"></span>
+</div>
+<div class="panel">
+<div class="table-wrap">
+<table>
+<caption id="caption" class="sub">Pre-token protocols, strongest implied value first. Select a row for its model and farm plan.</caption>
+<thead id="head"></thead>
+<tbody id="rows"></tbody>
+</table>
+<div id="empty" class="empty" hidden>
+<h2>No protocol matches that filter</h2>
+<p>Clear the search or pick another category or chain to see the board again.</p>
+<button class="button primary" type="button" id="clearFilters">Clear filters</button>
+</div>
+</div>
+</div>
+<div class="panels">
+<section class="panel pad" aria-label="Out-of-sample validation">
+<h2>Does it hold on tokens it never saw?</h2>
+<div id="valid"></div>
+</section>
+<section class="panel pad" aria-label="How a row is priced">
+<h2>How a row is priced</h2>
+<ol class="steps" id="pricing"></ol>
+</section>
+</div>
+<div class="panels">
+<section class="panel pad" aria-label="Categories with the most rows">
+<h2>Categories with the most rows</h2>
+<div id="cats"></div>
+</section>
+<section class="panel pad" aria-label="Value against TVL">
+<h2>Value against TVL</h2>
+<p class="sub">Traded tokens (market cap) against pre-token rows (implied value), log scales. Dashed line: the fitted size curve.</p>
+<div id="scatter"></div>
+</section>
+</div>
+<section class="panel model" aria-label="How implied value is computed">
+<h2>How implied value is computed</h2>
+<p class="sub">One function scores every row from the snapshot figures. No protocol name is special-cased and no row is hand-picked.</p>
+<p class="formula" id="formula"></p>
+<p class="sub" id="peerNote"></p>
+<p class="sub" id="liveNote"></p>
+</section>
+<p class="foot">Implied value is a model estimate, not a price and not a promise of a token. A protocol listed here records no token in the snapshot; that is the record, not proof it has none.</p>
+</div>
+</main>
+<dialog id="detail" class="detail" aria-labelledby="detailTitle"></dialog>
+<script src="../data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
